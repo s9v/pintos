@@ -4,6 +4,9 @@
 #include <list.h>
 #include <stdbool.h>
 
+// WARNING: be careful with double evaluation!
+#define MAX(a, b)  ((a) < (b) ?(b) :(a))
+
 /* A counting semaphore. */
 struct semaphore 
   {
@@ -22,6 +25,10 @@ struct lock
   {
     struct thread *holder;      /* Thread holding lock (for debugging). */
     struct semaphore semaphore; /* Binary semaphore controlling access. */
+
+    /* Project-1b: Priority Scheduling */
+    struct list_elem holder_list_elem; // used by STRUCT THREAD
+    int don_priority;
   };
 
 void lock_init (struct lock *);

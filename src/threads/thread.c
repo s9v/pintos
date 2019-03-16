@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include <list.h>
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -224,11 +225,12 @@ thread_block (void)
 }
 
 //priority of ready_list elements should be decreasing.
-bool compare_priority(const struct list_elem *a_, const struct list_elem *b_){
-  int a = list_entry (a_, struct thread, elem)->priority;
-  int b = list_entry (b_, struct thread, elem)->priority;
+bool compare_threads(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED){
+  int a = list_entry (a_, struct thread, elem)->eff_priority;
+  int b = list_entry (b_, struct thread, elem)->eff_priority;
   return a > b;
 }
+
 /* Transitions a blocked thread T to the ready-to-run state.
    This is an error if T is not blocked.  (Use thread_yield() to
    make the running thread ready.)
@@ -244,7 +246,8 @@ void thread_unblock (struct thread *t) {
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_insert_ordered (&ready_list, &t->elem, compare_priority, NULL);
+  // list_insert_ordered (&ready_list, &t->elem, compare_threads, NULL);
+  list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -312,8 +315,10 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (curr != idle_thread) 
-    list_insert_ordered(&ready_list, &curr->elem, compare_priority, NULL);
+  if (curr != idle_thread) {
+    // list_insert_ordered(&ready_list, &curr->elem, compare_threads, NULL);
+    list_push_back(&ready_list, &curr->elem);
+  }
   
   curr->status = THREAD_READY;
   schedule ();
@@ -324,7 +329,16 @@ thread_yield (void)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *cur = thread_current ();
+
+  int old_eff_priority = cur->eff_priority;
+
+  cur->priority = new_priority;
+  cur->eff_priority = MAX(cur->priority, cur->don_priority);
+
+  if (old_eff_priority > cur->eff_priority) {
+    thread_yield();
+  }
 }
 
 /* Returns the current thread's priority. */
@@ -449,6 +463,13 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+
+  /* Project-1b: Priority Scheduling */
+  t->don_priority = PRI_MIN;
+  t->eff_priority = priority;
+  list_init (&t->held_locks);
+  t->blocking_lock = NULL;
+
   t->magic = THREAD_MAGIC;
 }
 
@@ -475,8 +496,12 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  else {
+    struct list_elem *next_thread_e = list_max (&ready_list, compare_threads, NULL);
+    list_remove (next_thread_e);
+    struct thread *next_thread = list_entry (next_thread_e, struct thread, elem);
+    return next_thread;
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page

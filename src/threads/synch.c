@@ -57,23 +57,62 @@ sema_init (struct semaphore *sema, unsigned value)
    interrupt handler.  This function may be called with
    interrupts disabled, but if it sleeps then the next scheduled
    thread will probably turn interrupts back on. This is
-   sema_down function. */
+   sema_down function.
+
+   If DONATE is false, LOCK is ignored. Otherwise LOCK should be provided. */
 void
-sema_down (struct semaphore *sema) 
+sema_down2 (struct semaphore *sema, struct lock* lock) 
 {
   enum intr_level old_level;
-
+  
   ASSERT (sema != NULL);
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
+  struct thread *cur = thread_current ();
+
   while (sema->value == 0) 
     {
+      /* If semaphore belongs to a lock, perform priority donation */
+      if (lock) {
+        ASSERT (lock != NULL);
+        ASSERT (sema == &lock->semaphore);
+
+        cur->blocking_lock = lock;
+        sema_down_update_priorities(lock, cur->eff_priority);
+      }
+
       list_push_back (&sema->waiters, &thread_current ()->elem);
       thread_block ();
     }
+
+  // Acquire lock
+  lock->holder = cur;
+  if (cur->don_priority < lock->don_priority)
+    cur->don_priority =  lock->don_priority;
+  list_push_back (cur->held_locks, lock->holder_list_elem);
+
   sema->value--;
   intr_set_level (old_level);
+}
+
+void
+sema_down (struct semaphore *sema) {
+  sema_down2(sema, NULL);
+}
+
+void
+sema_down_update_priorities(struct lock* lock, int new_prio) {
+  ASSERT (lock != NULL && lock->holder != NULL);
+
+  while (lock != NULL) {
+    struct thread *t = lock->holder; // thread holding the lock
+    lock->don_priority = MAX(lock->don_priority, new_prio);
+    t->don_priority = MAX(t->don_priority, lock->don_priority);
+    t->eff_priority = MAX(t->priority, t->don_priority);
+
+    lock = t->blocking_lock;
+  }
 }
 
 /* Down or "P" operation on a semaphore, but only if the
@@ -102,23 +141,72 @@ sema_try_down (struct semaphore *sema)
   return success;
 }
 
+/* Compare locks by DON_PRIORITY (descending order) */
+bool compare_locks (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED){
+  int a = list_entry (a_, struct lock, holder_list_elem)->don_priority;
+  int b = list_entry (b_, struct lock, holder_list_elem)->don_priority;
+  return a > b;
+}
+
 /* Up or "V" operation on a semaphore.  Increments SEMA's value
    and wakes up one thread of those waiting for SEMA, if any.
 
    This function may be called from an interrupt handler. */
 void
-sema_up (struct semaphore *sema) 
+sema_up2 (struct semaphore *sema, struct lock *lock) 
 {
   enum intr_level old_level;
 
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+
+  if (!list_empty (&sema->waiters)) {
+
+    struct list_elem *max_thread_e = list_max (&sema->waiters, compare_threads, NULL);
+    
+    // remove from waiting list
+
+    list_remove (max_thread_e);
+    struct thread *max_t = list_entry (max_thread_e, struct thread, elem); // thread with highest priority
+    thread_unblock (max_t);
+
+    if (lock) {
+      lock->holder = NULL;
+
+      // update lock->don_priority
+      if (list_empty(&sema->waiters)) {
+        lock->don_priority = PRI_MIN;
+      }
+      else {
+        struct list_elem *max_thread_e = list_max (&sema->waiters, compare_threads, NULL);
+        struct thread *max_t = list_entry (max_thread_e, struct thread, elem);
+        lock->don_priority = max_t->eff_priority;
+      }
+
+      // update lock->holder->don_priority
+      list_remove (lock->holder_list_elem);
+      struct thread *t = thread_current ();
+
+      if (list_empty (t->held_locks)) {
+        t->don_priority = PRI_MIN;        
+      }
+      else {
+        struct list_elem *max_lock_e = list_max (t->held_locks, compare_locks, NULL);
+        struct lock *max_lock = list_entry (max_lock_e, struct lock, holder_list_elem);
+        t->don_priority = max_lock->don_priority;
+      }
+      t->eff_priority = MAX(t->priority, t->don_priority);
+    }
+  }
+  
   sema->value++;
   intr_set_level (old_level);
+}
+
+void
+sema_up (struct semaphore *sema) {
+  sema_up2 (sema, NULL);
 }
 
 static void sema_test_helper (void *sema_);
@@ -197,8 +285,8 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  sema_down (&lock->semaphore);
-  lock->holder = thread_current ();
+  // Donate priority to LOCK->HOLDER and wait for lock release
+  sema_down2 (&lock->semaphore, lock);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -233,8 +321,7 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  lock->holder = NULL;
-  sema_up (&lock->semaphore);
+  sema_up2 (&lock->semaphore, lock);
 }
 
 /* Returns true if the current thread holds LOCK, false

@@ -89,6 +89,19 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
 
+
+    /* Project-1a: Alarm Clock */
+    int64_t wake_time;
+
+
+    /* Project-1b: Priority Scheduling */
+    struct lock *blocking_lock; // the lock thread is waiting for
+
+    struct list held_locks;
+    int don_priority; // max priority donated by held_locks
+    int eff_priority; // effective priority
+
+    
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
@@ -96,7 +109,6 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-    int64_t wake_time;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
