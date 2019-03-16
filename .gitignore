@@ -1,4 +1,6 @@
 *.o
+*.d
 *.result
 *.output
 *.errors
+build/
