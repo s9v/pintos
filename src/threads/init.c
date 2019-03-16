@@ -78,15 +78,20 @@ main (void)
   /* Initialize ourselves as a thread so we can use locks,
      then enable console locking. */
   thread_init ();
-  console_init ();  
+  console_init ();
 
   /* Greet user. */
   printf ("Pintos booting with %'zu kB RAM...\n", ram_pages * PGSIZE / 1024);
 
   /* Initialize memory system. */
+  printf("<1>\n");
   palloc_init ();
+  printf("<2>\n");
   malloc_init ();
+  printf("<3>\n");
   paging_init ();
+  printf("<4>\n");
+
 
   /* Segmentation. */
 #ifdef USERPROG

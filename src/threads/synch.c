@@ -68,7 +68,6 @@ void sema_down2 (struct semaphore *sema, struct lock* lock)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  struct thread *cur = thread_current ();
 
   while (sema->value == 0) 
     {
@@ -77,6 +76,7 @@ void sema_down2 (struct semaphore *sema, struct lock* lock)
         ASSERT (lock != NULL);
         ASSERT (sema == &lock->semaphore);
 
+        struct thread *cur = thread_current ();
         cur->blocking_lock = lock;
         sema_down_update_priorities(lock, cur->eff_priority);
       }
@@ -86,10 +86,13 @@ void sema_down2 (struct semaphore *sema, struct lock* lock)
     }
 
   // Acquire lock
-  lock->holder = cur;
-  if (cur->don_priority < lock->don_priority)
-    cur->don_priority =  lock->don_priority;
-  list_push_back (&cur->held_locks, &lock->holder_list_elem);
+  if (lock) {
+    struct thread *cur = thread_current ();
+    lock->holder = cur;
+    if (cur->don_priority < lock->don_priority)
+      cur->don_priority =  lock->don_priority;
+    list_push_back (&cur->held_locks, &lock->holder_list_elem);
+  }
 
   sema->value--;
   intr_set_level (old_level);
@@ -161,42 +164,41 @@ sema_up2 (struct semaphore *sema, struct lock *lock)
   old_level = intr_disable ();
 
   if (!list_empty (&sema->waiters)) {
-
+    /* Unblock one waiting thread */
     struct list_elem *max_thread_e = list_max (&sema->waiters, compare_threads, NULL);
-    
-    // remove from waiting list
-
     list_remove (max_thread_e);
     struct thread *max_t = list_entry (max_thread_e, struct thread, elem); // thread with highest priority
+    max_t->blocking_lock = NULL;
     thread_unblock (max_t);
+  }
 
-    if (lock) {
-      lock->holder = NULL;
-
-      // update lock->don_priority
-      if (list_empty(&sema->waiters)) {
-        lock->don_priority = PRI_MIN;
-      }
-      else {
-        struct list_elem *max_thread_e = list_max (&sema->waiters, compare_threads, NULL);
-        struct thread *max_t = list_entry (max_thread_e, struct thread, elem);
-        lock->don_priority = max_t->eff_priority;
-      }
-
-      // update lock->holder->don_priority
-      list_remove (&lock->holder_list_elem);
-      struct thread *t = thread_current ();
-
-      if (list_empty (&t->held_locks)) {
-        t->don_priority = PRI_MIN;        
-      }
-      else {
-        struct list_elem *max_lock_e = list_max (&t->held_locks, compare_locks, NULL);
-        struct lock *max_lock = list_entry (max_lock_e, struct lock, holder_list_elem);
-        t->don_priority = max_lock->don_priority;
-      }
-      t->eff_priority = MAX(t->priority, t->don_priority);
+  if (lock) {
+    /* Update lock */
+    
+    lock->holder = NULL;
+    if (list_empty(&sema->waiters)) {
+      lock->don_priority = PRI_MIN;
     }
+    else {
+      struct list_elem *max_thread_e = list_max (&sema->waiters, compare_threads, NULL);
+      struct thread *max_t = list_entry (max_thread_e, struct thread, elem);
+      lock->don_priority = max_t->eff_priority;
+    }
+
+    /* Update thread_current() since it doesn't hold LOCK anymore */
+
+    list_remove (&lock->holder_list_elem);
+    struct thread *t = thread_current ();
+
+    if (list_empty (&t->held_locks)) {
+      t->don_priority = PRI_MIN;
+    }
+    else {
+      struct list_elem *max_lock_e = list_max (&t->held_locks, compare_locks, NULL);
+      struct lock *max_lock = list_entry (max_lock_e, struct lock, holder_list_elem);
+      t->don_priority = max_lock->don_priority;
+    }
+    t->eff_priority = MAX(t->priority, t->don_priority);
   }
   
   sema->value++;
@@ -266,6 +268,7 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
+  lock->don_priority = PRI_MIN;
   sema_init (&lock->semaphore, 1);
 }
 
