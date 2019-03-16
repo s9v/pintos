@@ -20,6 +20,7 @@ bool sema_try_down (struct semaphore *);
 void sema_up (struct semaphore *);
 void sema_self_test (void);
 
+
 /* Lock. */
 struct lock 
   {
@@ -30,6 +31,13 @@ struct lock
     struct list_elem holder_list_elem; // used by STRUCT THREAD
     int don_priority;
   };
+
+//Lab1 Priority Scheduling
+void sema_down2 (struct semaphore *, struct lock *);
+void sema_up2 (struct semaphore *, struct lock *);
+void sema_down_update_priorities(struct lock* , int);
+bool compare_locks (const struct list_elem *, const struct list_elem *, void *aux);
+
 
 void lock_init (struct lock *);
 void lock_acquire (struct lock *);

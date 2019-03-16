@@ -60,8 +60,7 @@ sema_init (struct semaphore *sema, unsigned value)
    sema_down function.
 
    If DONATE is false, LOCK is ignored. Otherwise LOCK should be provided. */
-void
-sema_down2 (struct semaphore *sema, struct lock* lock) 
+void sema_down2 (struct semaphore *sema, struct lock* lock) 
 {
   enum intr_level old_level;
   
@@ -90,7 +89,7 @@ sema_down2 (struct semaphore *sema, struct lock* lock)
   lock->holder = cur;
   if (cur->don_priority < lock->don_priority)
     cur->don_priority =  lock->don_priority;
-  list_push_back (cur->held_locks, lock->holder_list_elem);
+  list_push_back (&cur->held_locks, &lock->holder_list_elem);
 
   sema->value--;
   intr_set_level (old_level);
@@ -185,14 +184,14 @@ sema_up2 (struct semaphore *sema, struct lock *lock)
       }
 
       // update lock->holder->don_priority
-      list_remove (lock->holder_list_elem);
+      list_remove (&lock->holder_list_elem);
       struct thread *t = thread_current ();
 
-      if (list_empty (t->held_locks)) {
+      if (list_empty (&t->held_locks)) {
         t->don_priority = PRI_MIN;        
       }
       else {
-        struct list_elem *max_lock_e = list_max (t->held_locks, compare_locks, NULL);
+        struct list_elem *max_lock_e = list_max (&t->held_locks, compare_locks, NULL);
         struct lock *max_lock = list_entry (max_lock_e, struct lock, holder_list_elem);
         t->don_priority = max_lock->don_priority;
       }
