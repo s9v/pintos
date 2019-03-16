@@ -29,6 +29,7 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -95,7 +96,7 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
-
+  
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
@@ -222,6 +223,12 @@ thread_block (void)
   schedule ();
 }
 
+//priority of ready_list elements should be decreasing.
+bool compare_priority(const struct list_elem *a_, const struct list_elem *b_){
+  int a = list_entry (a_, struct thread, elem)->priority;
+  int b = list_entry (b_, struct thread, elem)->priority;
+  return a > b;
+}
 /* Transitions a blocked thread T to the ready-to-run state.
    This is an error if T is not blocked.  (Use thread_yield() to
    make the running thread ready.)
@@ -230,16 +237,14 @@ thread_block (void)
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
-void
-thread_unblock (struct thread *t) 
-{
+void thread_unblock (struct thread *t) {
   enum intr_level old_level;
 
   ASSERT (is_thread (t));
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, compare_priority, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -308,7 +313,8 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (curr != idle_thread) 
-    list_push_back (&ready_list, &curr->elem);
+    list_insert_ordered(&ready_list, &curr->elem, compare_priority, NULL);
+  
   curr->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);

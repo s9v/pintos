@@ -20,6 +20,9 @@
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
+// this list keeps all threads with increasing wake_time order
+static struct list sleeping_list;
+
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
@@ -44,6 +47,8 @@ timer_init (void)
   outb (0x40, count >> 8);
 
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  list_init (&sleeping_list);
+  
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -92,15 +97,29 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
+bool compare_threads (const struct list_elem *a_, const struct list_elem *b_,
+            void *aux UNUSED) {
+  int64_t a = list_entry (a_, struct thread, elem)->wake_time;
+  int64_t b = list_entry (b_, struct thread, elem)->wake_time;
+  return a < b;
+}
 /* Suspends execution for approximately TICKS timer ticks. */
-void
-timer_sleep (int64_t ticks) 
-{
+void timer_sleep (int64_t ticks) {
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  // while (timer_elapsed (start) < ticks) 
+  //   thread_yield ();
+  //disable interruption
+  enum intr_level old_level = intr_disable ();
+  struct thread *tmp = thread_current();
+  tmp->wake_time = start + ticks;
+  list_insert_ordered(&sleeping_list, &tmp->elem ,compare_threads, NULL);
+  thread_block ();
+  
+
+  intr_set_level (old_level);
+  
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -131,11 +150,30 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
+void check_sleeping(){
+  struct list_elem *e,*next;
+
+  for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list) ; e = next){
+    struct thread *t = list_entry (e, struct thread, elem);
+    if(t == NULL)
+      break;
+    if(t->tid == 0)
+      break;
+    if(timer_ticks () < t->wake_time)
+      break;
+    next = list_next (e);
+    list_pop_front (&sleeping_list);
+    thread_unblock(t);
+  }
+}
+
+
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  check_sleeping();
   thread_tick ();
 }
 
