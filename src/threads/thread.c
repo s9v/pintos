@@ -101,7 +101,10 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
 }
+
+
 
 /* Starts preemptive thread scheduling by enabling interrupts.
    Also creates the idle thread. */
@@ -316,18 +319,21 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
+void update_eff_priority(struct thread *t){
+  t->eff_priority = MAX(t->don_priority, t->priority);
+}
 /* Sets the current thread's priority to NEW_PRIORITY. */
-void
-thread_set_priority (int new_priority) 
-{
-  thread_current ()->priority = new_priority;
+void thread_set_priority (int new_priority) {
+  struct thread *cur = thread_current ();
+  cur->priority = new_priority;
+  update_eff_priority(cur);
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  return thread_current ()->eff_priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -446,7 +452,14 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  //lab1
+  t->blocking_lock = NULL;
+  t->don_priority = PRI_MIN;
+  t->eff_priority = priority;
+  t->wake_time = 0;
+  list_init(&t->held_locks);
 }
+
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
    returns a pointer to the frame's base. */
@@ -463,8 +476,8 @@ alloc_frame (struct thread *t, size_t size)
 
 //lab1
 bool compare_threads (const struct list_elem *a_, const struct list_elem *b_, void *aux){
-  int a = list_entry(a_, struct thread, elem)->priority;
-  int b = list_entry(b_, struct thread, elem)->priority;
+  int a = list_entry(a_, struct thread, elem)->eff_priority;
+  int b = list_entry(b_, struct thread, elem)->eff_priority;
   return a < b;
 }
 

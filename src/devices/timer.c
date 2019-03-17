@@ -109,7 +109,7 @@ timer_sleep (int64_t ticks)
   //   thread_yield ();
   struct thread *cur = thread_current();
   cur->wake_time = ticks + start;
-  list_push_back(&sleeping_list, &cur->sleeping_elem);
+  list_push_back(&sleeping_list, &cur->elem);
   thread_block();
   intr_set_level (old_level);
 
@@ -148,7 +148,7 @@ void check_sleeping_threads(){
 
   for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);
        e = next){
-    struct thread *t = list_entry (e, struct thread, sleeping_elem);
+    struct thread *t = list_entry (e, struct thread, elem);
     next = list_next(e);
 
     if(t->wake_time <= timer_ticks()){ //TOCO try safer ticks
