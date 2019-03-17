@@ -114,7 +114,7 @@ void timer_sleep (int64_t ticks) {
   enum intr_level old_level = intr_disable ();
   struct thread *tmp = thread_current();
   tmp->wake_time = start + ticks;
-  list_insert_ordered(&sleeping_list, &tmp->elem ,compare_threads, NULL);
+  list_insert_ordered(&sleeping_list, &tmp->elem ,compare_threads_wake_time, NULL);
   thread_block ();
   
 

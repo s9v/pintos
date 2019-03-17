@@ -147,7 +147,7 @@ sema_try_down (struct semaphore *sema)
 bool compare_locks (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED){
   int a = list_entry (a_, struct lock, holder_list_elem)->don_priority;
   int b = list_entry (b_, struct lock, holder_list_elem)->don_priority;
-  return a > b;
+  return a < b;
 }
 
 /* Up or "V" operation on a semaphore.  Increments SEMA's value
