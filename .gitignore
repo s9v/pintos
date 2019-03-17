@@ -1,0 +1,6 @@
+*.o
+*.result
+*.output
+*.errors
+*.txt
+.gdb_history
