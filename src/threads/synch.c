@@ -313,7 +313,7 @@ void lock_release (struct lock *lock) {
   update_lock_priority(lock);
 
   sema_up (&lock->semaphore);
-
+  
   intr_set_level (old_level);
   
 }
