@@ -461,21 +461,28 @@ alloc_frame (struct thread *t, size_t size)
   return t->stack;
 }
 
+//lab1
+bool compare_threads (const struct list_elem *a_, const struct list_elem *b_, void *aux){
+  int a = list_entry(a_, struct thread, elem)->priority;
+  int b = list_entry(b_, struct thread, elem)->priority;
+  return a < b;
+}
+
 /* Chooses and returns the next thread to be scheduled.  Should
    return a thread from the run queue, unless the run queue is
    empty.  (If the running thread can continue running, then it
    will be in the run queue.)  If the run queue is empty, return
    idle_thread. */
-static struct thread *
-next_thread_to_run (void) 
-{
+static struct thread * next_thread_to_run (void) {
   if (list_empty (&ready_list))
     return idle_thread;
   else{
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    struct list_elem *e = list_max(&ready_list, compare_threads, NULL);
+    list_remove(e);
+    struct thread *t = list_entry(e, struct thread, elem);
+    return t;
   }
 }
-
 /* Completes a thread switch by activating the new thread's page
    tables, and, if the previous thread is dying, destroying it.
 
