@@ -233,6 +233,7 @@ void update_don_prio_upwards(struct lock *lock, int new_priority){
   while(lock != NULL){
     lock->don_priority = MAX(lock->don_priority, new_priority);
     lock->holder->don_priority = MAX(lock->holder->don_priority, new_priority);
+    update_eff_priority(lock->holder);
     lock = lock->holder->blocking_lock;
   }
 }
@@ -241,12 +242,23 @@ void lock_acquire (struct lock *lock){
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
-  
+
   enum intr_level old_level = intr_disable ();
+  
+  // struct list_elem *e1, *e2;
+  // for (e1 = list_begin (&lock->waiters), e2 = list_begin (&lock->semaphore.waiters);
+  //      e1 != list_end (&lock->waiters) && e2 != list_end (&lock->semaphore.waiters);
+  //      e1 = list_next (e1), e2 = list_next (e2)
+  //   ) {
+  //   struct thread *t1 = list_entry (e1, struct thread, lock_elem);
+  //   struct thread *t2 = list_entry (e2, struct thread, elem);
+  //   ASSERT (t1 == t2);
+  // }
+  // ASSERT (e1 == list_end (&lock->waiters) && e2 == list_end (&lock->semaphore.waiters));
   
   struct thread *cur = thread_current();
   
-  if(lock->holder != NULL){
+  if (lock->holder != NULL) {
     list_push_back(&lock->waiters, &cur->lock_elem);
     
     update_lock_priority(lock);
@@ -257,6 +269,7 @@ void lock_acquire (struct lock *lock){
   
   sema_down (&lock->semaphore);
 
+  ASSERT (cur->blocking_lock == NULL);
   lock->holder = cur;
   list_push_back( &cur->held_locks, &lock->elem);
   intr_set_level (old_level);
@@ -301,19 +314,55 @@ void free_max_waiter(struct lock *lock){
 void lock_release (struct lock *lock) {
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
+
   enum intr_level old_level = intr_disable ();
+
+  // struct list_elem *e1, *e2;
+  // for (e1 = list_begin (&lock->waiters), e2 = list_begin (&lock->semaphore.waiters);
+  //      e1 != list_end (&lock->waiters) && e2 != list_end (&lock->semaphore.waiters);
+  //      e1 = list_next (e1), e2 = list_next (e2)
+  //   ) {
+  //   struct thread *t1 = list_entry (e1, struct thread, lock_elem);
+  //   struct thread *t2 = list_entry (e2, struct thread, elem);
+  //   ASSERT (t1 == t2);
+  // }
+
+  // if (e1 != list_end (&lock->waiters)) {
+  //   ASSERT (false);
+  // }
+  // if (e2 != list_end (&lock->semaphore.waiters)) {
+  //   printf ("ASSERT about to blow up at: %s\n", thread_current()->name);
+  //   printf ("lock->waiters {\n");
+  //   for (e1 = list_begin (&lock->waiters); e1 != list_end (&lock->waiters);
+  //        e1 = list_next (e1)) {
+  //     struct thread *t1 = list_entry (e1, struct thread, lock_elem);
+  //     printf ("    thread->name: %s\n", t1->name);
+  //   }
+  //   printf ("}\n");
+  //   printf ("lock->semaphore.waiters {\n");
+  //   for (e1 = list_begin (&lock->semaphore.waiters); e1 != list_end (&lock->semaphore.waiters);
+  //        e1 = list_next (e1)) {
+  //     struct thread *t1 = list_entry (e1, struct thread, elem);
+  //     printf ("    thread->name: %s\n", t1->name);
+  //   }
+  //   printf ("}\n");
+
+  //   ASSERT (false);
+  // }
+
   
   lock->holder = NULL;
   struct thread *cur = thread_current();
   list_remove(&lock->elem); // deletes from cur->held_locks
   update_thread_don_priority(cur);
 
+
   if (!list_empty(&lock->waiters))
     free_max_waiter(lock);
   update_lock_priority(lock);
 
   sema_up (&lock->semaphore);
-  
+
   intr_set_level (old_level);
   
 }

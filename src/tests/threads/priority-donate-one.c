@@ -21,13 +21,18 @@ static thread_func acquire2_thread_func;
 void
 test_priority_donate_one (void) 
 {
+  // printf("thread_get_priority (): %d\n",thread_get_priority ());
   struct lock lock;
+  // printf("thread_get_priority (): %d\n",thread_get_priority ());
 
   /* This test does not work with the MLFQS. */
   ASSERT (!thread_mlfqs);
+  // printf("thread_get_priority (): %d\n",thread_get_priority ());
 
   /* Make sure our priority is the default. */
+  // printf("thread_get_priority (): %d\n",thread_get_priority ());
   ASSERT (thread_get_priority () == PRI_DEFAULT);
+
 
   lock_init (&lock);
   lock_acquire (&lock);
@@ -56,10 +61,16 @@ acquire1_thread_func (void *lock_)
 static void
 acquire2_thread_func (void *lock_) 
 {
+  // printf ("<1> ACQUIRE2 thread_get_priority = %d\n", thread_get_priority ());
   struct lock *lock = lock_;
 
   lock_acquire (lock);
+  // printf ("<2> ACQUIRE2 thread_get_priority = %d\n", thread_get_priority ());
   msg ("acquire2: got the lock");
+  // printf ("<3> ACQUIRE2 thread_get_priority = %d\n", thread_get_priority ());
   lock_release (lock);
+  // printf ("<4> ACQUIRE2 thread_get_priority = %d\n", thread_get_priority ());
   msg ("acquire2: done");
+  // printf ("<5> ACQUIRE2 thread_get_priority = %d\n", thread_get_priority ());
+
 }
