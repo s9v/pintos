@@ -144,7 +144,6 @@ timer_print_stats (void)
 }
 
 void check_sleeping_threads(){
-  enum intr_level old_level = intr_disable ();
   struct list_elem *e,*next;
 
   for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);
@@ -152,23 +151,25 @@ void check_sleeping_threads(){
     struct thread *t = list_entry (e, struct thread, sleeping_elem);
     next = list_next(e);
 
-    if(t->wake_time < timer_ticks()){ //TOCO try safer ticks
+    if(t->wake_time <= timer_ticks()){ //TOCO try safer ticks
       list_remove(e); 
       thread_unblock(t);
     }
   }
-  intr_set_level (old_level);
   
 }
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
- //TODO check the order(swap)
+  enum intr_level old_level = intr_disable ();
+  
+  //TODO check the order(swap)
   ticks++;
-
-  check_sleeping_threads();
   thread_tick ();
+  check_sleeping_threads();
+  intr_set_level (old_level);
+  
 }
 
 
