@@ -105,14 +105,13 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
   ASSERT (intr_get_level () == INTR_ON);
   enum intr_level old_level = intr_disable ();
-  // while (timer_elapsed (start) < ticks) 
-  //   thread_yield ();
-  struct thread *cur = thread_current();
-  cur->wake_time = ticks + start;
-  list_push_back(&sleeping_list, &cur->elem);
-  thread_block();
-  intr_set_level (old_level);
 
+  struct thread *cur = thread_current ();
+  cur->wake_time = start + ticks;
+  list_push_back (&sleeping_list, &cur->elem);
+  thread_block ();
+  
+  intr_set_level (old_level);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -143,33 +142,35 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
-void check_sleeping_threads(){
+void check_sleeping_threads() {
+  struct thread *cur = thread_current();
   struct list_elem *e,*next;
 
   for (e = list_begin (&sleeping_list); e != list_end (&sleeping_list);
-       e = next){
+       e = next) {
     struct thread *t = list_entry (e, struct thread, elem);
-    next = list_next(e);
+    next = list_next (e);
 
-    if(t->wake_time <= timer_ticks()){ //TOCO try safer ticks
-      list_remove(e); 
-      thread_unblock(t);
+    if (t->wake_time <= timer_ticks()) {
+      list_remove (e);
+      thread_unblock (t);
+
+      if (cur->eff_priority < t->eff_priority)
+        intr_yield_on_return ();
     }
-  }
-  
+  }  
 }
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
-  enum intr_level old_level = intr_disable ();
+  // No need to disable interrupts manually.
+  // They are already disabled by "interrupt.c".
+  ASSERT (intr_get_level() == INTR_OFF);
   
-  //TODO check the order(swap)
   ticks++;
   thread_tick ();
   check_sleeping_threads();
-  intr_set_level (old_level);
-  
 }
 
 

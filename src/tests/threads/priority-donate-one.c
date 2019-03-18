@@ -21,6 +21,7 @@ static thread_func acquire2_thread_func;
 void
 test_priority_donate_one (void) 
 {
+  // printf ("<1>\n");
   // printf("thread_get_priority (): %d\n",thread_get_priority ());
   struct lock lock;
   // printf("thread_get_priority (): %d\n",thread_get_priority ());
@@ -33,10 +34,14 @@ test_priority_donate_one (void)
   // printf("thread_get_priority (): %d\n",thread_get_priority ());
   ASSERT (thread_get_priority () == PRI_DEFAULT);
 
+  // printf ("<2>\n");
 
   lock_init (&lock);
+  // printf ("<3>\n");
   lock_acquire (&lock);
+  // printf ("<4>\n");
   thread_create ("acquire1", PRI_DEFAULT + 1, acquire1_thread_func, &lock);
+  // printf ("<5>\n");
   msg ("This thread should have priority %d.  Actual priority: %d.",
        PRI_DEFAULT + 1, thread_get_priority ());
   thread_create ("acquire2", PRI_DEFAULT + 2, acquire2_thread_func, &lock);
@@ -50,12 +55,15 @@ test_priority_donate_one (void)
 static void
 acquire1_thread_func (void *lock_) 
 {
+  // printf ("acquire1 <1>\n");
   struct lock *lock = lock_;
-
+  // printf ("acquire1 <2>\n");
   lock_acquire (lock);
+  // printf ("acquire1 <3>\n");
   msg ("acquire1: got the lock");
   lock_release (lock);
   msg ("acquire1: done");
+  // printf ("acquire1 <9>\n");
 }
 
 static void

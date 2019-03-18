@@ -206,9 +206,8 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
-  if(t->eff_priority > thread_current()->eff_priority)
-    thread_yield();
-
+  if (thread_current()->eff_priority < t->eff_priority)
+    thread_yield ();
 
   return tid;
 }
@@ -250,8 +249,6 @@ thread_unblock (struct thread *t)
   t->status = THREAD_READY;
 
   intr_set_level (old_level);
-
-  //TODO may need to yield by priority comparison
 }
 
 /* Returns the name of the running thread. */
@@ -488,8 +485,8 @@ alloc_frame (struct thread *t, size_t size)
 
 //lab1
 bool compare_threads (const struct list_elem *a_, const struct list_elem *b_, void *aux){
-  int a = list_entry(a_, struct thread, elem)->eff_priority;
-  int b = list_entry(b_, struct thread, elem)->eff_priority;
+  int a = list_entry (a_, struct thread, elem)->eff_priority;
+  int b = list_entry (b_, struct thread, elem)->eff_priority;
   return a < b;
 }
 
@@ -501,10 +498,10 @@ bool compare_threads (const struct list_elem *a_, const struct list_elem *b_, vo
 static struct thread * next_thread_to_run (void) {
   if (list_empty (&ready_list))
     return idle_thread;
-  else{
-    struct list_elem *e = list_max(&ready_list, compare_threads, NULL);
-    list_remove(e);
-    struct thread *t = list_entry(e, struct thread, elem);
+  else {
+    struct list_elem *e = list_max (&ready_list, compare_threads, NULL);
+    list_remove (e);
+    struct thread *t = list_entry (e, struct thread, elem);
     return t;
   }
 }
