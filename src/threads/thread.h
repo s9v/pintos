@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/fixed-point.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -25,8 +26,14 @@ typedef int tid_t;
 #define PRI_MAX 63                      /* Highest priority. */
 
 
-//lab1
+/* Lab1 */
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
+extern int64_t load_avg;
+
+int64_t fixed_init(int);
+int fixed_round(int64_t);
+int64_t fixed_mul(int64_t, int64_t);
+int64_t fixed_div(int64_t, int64_t);
 
 /* A kernel thread or user process.
 
@@ -94,8 +101,9 @@ struct thread
     int priority;                       /* Priority. Acts like base*/
 
     /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
-    struct list_elem lock_elem;              /* List element. */
+    struct list_elem elem;              /* List element in sleeping_list or ready_list. */
+    struct list_elem lock_elem;         /* List element in lock->waiters. */
+    struct list_elem all_elem;          /* List element in all_threads. */
     
     //lab1
     int64_t wake_time;
@@ -103,6 +111,10 @@ struct thread
     int don_priority;
     int eff_priority;
     struct list held_locks;
+
+    //lab1-mlfqs
+    int64_t recent_cpu;
+    int nice;
 
 
 
@@ -122,7 +134,9 @@ extern bool thread_mlfqs;
 
 //lab1
 bool compare_threads (const struct list_elem *, const struct list_elem *, void *);
-void update_eff_priority(struct thread *t);
+void update_load_avg (void);
+void update_recent_cpu (struct thread *);
+void update_eff_priority(struct thread *);
 
 void thread_init (void);
 void thread_start (void);

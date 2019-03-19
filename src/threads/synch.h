@@ -30,6 +30,14 @@ struct lock
   
   };
 
+bool compare_threads__lock_elem (const struct list_elem *, const struct list_elem *, void *);
+bool compare_locks (const struct list_elem *, const struct list_elem *, void *);
+bool compare_cond_waiters (const struct list_elem *, const struct list_elem *, void *);
+
+void update_thread_dprio (struct thread *);
+void update_thread_eprio (struct thread *);
+void update_lock_dprio (struct lock *);
+
 void lock_init (struct lock *);
 void lock_acquire (struct lock *);
 bool lock_try_acquire (struct lock *);

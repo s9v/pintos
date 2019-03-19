@@ -205,13 +205,13 @@ lock_init (struct lock *lock)
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
 
-bool compare_threads__lock_elem (const struct list_elem *a_, const struct list_elem *b_, void *aux){
+bool compare_threads__lock_elem (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED){
   int a = list_entry(a_, struct thread, lock_elem)->eff_priority;
   int b = list_entry(b_, struct thread, lock_elem)->eff_priority;
   return a < b;
 }
 
-bool compare_locks (const struct list_elem *a_, const struct list_elem *b_, void *aux){
+bool compare_locks (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED){
   int a = list_entry(a_, struct lock, elem)->don_priority;
   int b = list_entry(b_, struct lock, elem)->don_priority;
   return a < b;
@@ -282,18 +282,20 @@ void lock_acquire (struct lock *lock){
   
   struct thread *cur = thread_current ();
   
-  // Add self to lock waiters list, and update all dprio's.
-  cur->blocking_lock = lock;
-  list_push_back (&lock->waiters, &cur->lock_elem);
-  
-  struct lock *lock_tmp = lock;
-  while (lock_tmp != NULL) {  
-    update_lock_dprio (lock_tmp);
+  if (!thread_mlfqs) {
+    // Add self to lock waiters list, and update all dprio's.
+    cur->blocking_lock = lock;
+    list_push_back (&lock->waiters, &cur->lock_elem);
     
-    if (lock_tmp->holder == NULL)
-      break;
-    update_thread_dprio (lock_tmp->holder);
-    lock_tmp = lock_tmp->holder->blocking_lock;
+    struct lock *lock_tmp = lock;
+    while (lock_tmp != NULL) {  
+      update_lock_dprio (lock_tmp);
+      
+      if (lock_tmp->holder == NULL)
+        break;
+      update_thread_dprio (lock_tmp->holder);
+      lock_tmp = lock_tmp->holder->blocking_lock;
+    }
   }
 
   sema_down (&lock->semaphore);
@@ -304,14 +306,20 @@ void lock_acquire (struct lock *lock){
   // ASSERT (cur->blocking_lock == NULL);
   ASSERT (lock->holder == NULL);
 
-  // Remove self from waiters list, and update all dprio's.
-  cur->blocking_lock = NULL;
-  list_remove (&cur->lock_elem);
-  update_lock_dprio (lock);
+  if (!thread_mlfqs) {
+    // Remove self from waiters list, and update all dprio's.
+    cur->blocking_lock = NULL;
+    list_remove (&cur->lock_elem);
+    update_lock_dprio (lock);
+  }
+  
   // Acquire lock, and update self dprio.
   lock->holder = cur;
-  list_push_back (&cur->held_locks, &lock->elem);
-  update_thread_dprio (cur);
+  
+  if (!thread_mlfqs) {
+    list_push_back (&cur->held_locks, &lock->elem);
+    update_thread_dprio (cur);
+  }
 
   intr_set_level (old_level);
 }
@@ -362,8 +370,11 @@ void lock_release (struct lock *lock) {
   struct thread *cur = thread_current();
   // Release lock, update self dprio.
   lock->holder = NULL;
-  list_remove (&lock->elem);
-  update_thread_dprio (cur);
+
+  if (!thread_mlfqs) {
+    list_remove (&lock->elem);
+    update_thread_dprio (cur);
+  }
 
   sema_up (&lock->semaphore);
 
@@ -439,7 +450,7 @@ cond_wait (struct condition *cond, struct lock *lock)
 }
 
 //lab1
-bool compare_cond_waiters (const struct list_elem *a_, const struct list_elem *b_, void *aux){
+bool compare_cond_waiters (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED){
   int a = list_entry (a_, struct semaphore_elem, elem)->thread->eff_priority;
   int b = list_entry (b_, struct semaphore_elem, elem)->thread->eff_priority;
   return a < b;
