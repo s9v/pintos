@@ -104,6 +104,11 @@ struct thread
     int eff_priority;
     struct list held_locks;
 
+    // MLFQS
+    int64_t recent_cpu;
+    int nice;
+    struct list_elem all_elem;
+
 
 
 #ifdef USERPROG
@@ -123,6 +128,13 @@ extern bool thread_mlfqs;
 //lab1
 bool compare_threads (const struct list_elem *, const struct list_elem *, void *);
 void update_eff_priority(struct thread *t);
+
+
+//lab1 MLFQS
+void recalc_eff_priority (struct thread *);
+void recalc_load_avg (void);
+void recalc_recent_cpu (struct thread *);
+void recalc_eprio_for_all_list (void);
 
 void thread_init (void);
 void thread_start (void);
