@@ -1,0 +1,8 @@
+build/
+*.tar.gz
+*.gdb_history
+*.o
+*.result
+*.output
+*.errors
+*.txt
