@@ -1,3 +1,5 @@
+examples
+*.dsk
 build/
 *.tar.gz
 *.gdb_history
