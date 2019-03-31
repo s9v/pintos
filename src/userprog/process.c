@@ -17,6 +17,8 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+#include "debug.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -226,7 +228,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
-  file = filesys_open (file_name);
+  // copy
+  int file_name_len = strlen(file_name);
+  char *file_name2 = malloc (file_name_len);
+  strlcpy (file_name2, file_name, file_name_len + 1);
+  // open real file_name
+  char *save_ptr, *file_name_real;
+  file_name_real = strtok_r (file_name2, " ", &save_ptr);
+  file = filesys_open (file_name_real);
+
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -441,18 +451,65 @@ setup_stack (void **esp, const char *file_name)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success) {
-        int fn_size = strlen(file_name);
 
-        char *dest_fn = (char *)(PHYS_BASE - fn_size - 1);
-        strlcpy(dest_fn, file_name, fn_size + 1);
+        // copy to FILE_NAME2
+        int file_name_len = strlen(file_name);
+        char *file_name2 = malloc (file_name_len);
+        strlcpy (file_name2, file_name, file_name_len+1);
+        // tokenize
+        char *token, *save_ptr;
+        int total_len = 0;
+        int argc = 0;
+        for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
+          int token_len = strlen(token);
+          total_len += token_len + 1;
+          argc++;
+        }
 
-        *(int *)(dest_fn - 4) = (int)NULL;
-        *(int *)(dest_fn - 8) = (int)dest_fn;
-        *(int *)(dest_fn - 12) = (int)1;
-        *(int *)(dest_fn - 16) = (int)0;
-        *esp = dest_fn - 16;
+        strlcpy (file_name2, file_name, file_name_len+1);
 
-        hex_dump((uintptr_t) *(esp), *(esp), sizeof(char) * 64, true);
+        char *next_str_ptr = (char *)(PHYS_BASE) - total_len;
+        char **adr_arr_ptr = (char **)(next_str_ptr) - argc - 1;
+        char **argv = adr_arr_ptr;
+        for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
+          printf ("'%s'\n", token);
+          int token_len = strlen(token);
+          strlcpy (next_str_ptr, token, token_len + 1);
+          *adr_arr_ptr = next_str_ptr;
+          adr_arr_ptr++;
+          next_str_ptr += token_len + 1;
+        }
+
+        void **stack_ptr = (void *)argv;
+
+        // push argv
+        stack_ptr -= 1;
+        *stack_ptr = argv;
+
+        // push argc
+        stack_ptr -= 1;
+        *(int *)stack_ptr = argc;
+
+        // push return address
+        stack_ptr -= 1;
+        *stack_ptr = (void *)0;
+        *esp = stack_ptr;
+
+        // ~~~ OLD ~~~
+        // int fn_size = strlen(file_name);
+        //
+        // char *dest_fn = (char *)(PHYS_BASE - fn_size - 1);
+        // strlcpy(dest_fn, file_name, fn_size + 1);
+        //
+        // *(int *)(dest_fn - 4) = (int)NULL;
+        // *(int *)(dest_fn - 8) = (int)dest_fn;
+        // *(int *)(dest_fn - 8) = (dest_fn - 8);
+        // *(int *)(dest_fn - 12) = (int)1;
+        // *(int *)(dest_fn - 16) = (int)0;
+        // *esp = dest_fn - 16;
+
+        hex_dump((uintptr_t) PHYS_BASE-80, PHYS_BASE-80, sizeof(char) * 80, true);
+        // PANIC ("silap");
       }
       else
         palloc_free_page (kpage);
