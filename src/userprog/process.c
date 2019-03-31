@@ -90,6 +90,8 @@ start_process (void *f_name)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
+  while(true) { }
+
   return -1;
 }
 
@@ -107,7 +109,7 @@ process_exit (void)
     {
       /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
-         so that a timer interrupt can't switch back to the
+         so that a timer interrupt can't swiptch back to the
          process page directory.  We must activate the base page
          directory before destroying the process's page
          directory, or our active page directory will be one
@@ -197,7 +199,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, const char *file_name);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -304,7 +306,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, file_name))
     goto done;
 
   /* Start address. */
@@ -429,7 +431,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, const char *file_name) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -438,8 +440,20 @@ setup_stack (void **esp)
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
+      if (success) {
+        int fn_size = strlen(file_name);
+
+        char *dest_fn = (char *)(PHYS_BASE - fn_size - 1);
+        strlcpy(dest_fn, file_name, fn_size + 1);
+
+        *(int *)(dest_fn - 4) = (int)NULL;
+        *(int *)(dest_fn - 8) = (int)dest_fn;
+        *(int *)(dest_fn - 12) = (int)1;
+        *(int *)(dest_fn - 16) = (int)0;
+        *esp = dest_fn - 16;
+
+        hex_dump((uintptr_t) *(esp), *(esp), sizeof(char) * 64, true);
+      }
       else
         palloc_free_page (kpage);
     }
