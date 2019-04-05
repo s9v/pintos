@@ -8,3 +8,4 @@ build/
 *.output
 *.errors
 *.txt
+.vscode/
