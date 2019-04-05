@@ -3,10 +3,17 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/process.h"
 #include "threads/malloc.h"
+#include "threads/init.h"
 #include "string.h"
 
 static void syscall_handler (struct intr_frame *);
+
+void syscall_handler_arg0 (int, struct intr_frame *);
+void syscall_handler_arg1 (int, struct intr_frame *);
+void syscall_handler_arg2 (int, struct intr_frame *);
+
 void exit (int status);
 int write (int fd, const void *buffer, unsigned size);
 
@@ -20,36 +27,89 @@ static void
 syscall_handler (struct intr_frame *f) 
 {
   int syscall_no = *(int *) f->esp;
-  // printf ("system call! [%d]\n", syscall_no);
+
   if (syscall_no == SYS_WRITE) {
-  	int *ptr = f->esp;
+    int *ptr = f->esp;
 
-  	ptr++;
-  	int fd = *ptr;
+    ptr++;
+    int fd = *ptr;
 
-  	ptr++;
-  	void *buffer = *(void **)ptr;
+    ptr++;
+    void *buffer = *(void **)ptr;
 
-  	ptr++;
-  	unsigned size = *(unsigned *)ptr;
-  	
-  	// printf("fd: %d\n",fd);
-  	// printf("size: %d\n",size);
-  	// printf("buff: %s\n",(char *)buffer);
-  	write(fd, buffer, size);
+    ptr++;
+    unsigned size = *(unsigned *)ptr;
+    
+    f->eax = write(fd, buffer, size);
   }
-  else if (syscall_no == SYS_EXIT) {
-  	int *ptr = f->esp;
+  else
+  switch (syscall_no) {
+    case SYS_HALT:
+      syscall_handler_arg0(syscall_no, f);
+    break;
 
-  	ptr++;
-  	int status = *ptr;
+    case SYS_EXIT: 
+    case SYS_EXEC: 
+    case SYS_WAIT: 
+    // case SYS_REMOVE: 
+    // case SYS_OPEN: 
+    // case SYS_FILESIZE: 
+    // case SYS_TELL: 
+    // case SYS_CLOSE: 
+      syscall_handler_arg1(syscall_no, f);
+    break;
 
-  	exit(status);
+    default:
+      PANIC ("syscall not implemented: [%d]", syscall_no);
+    break;
   }
-  else {
-  	PANIC ("syscall not implemented: [%d]", syscall_no);
+  
+}
+
+void syscall_handler_arg0 (int syscall_no, struct intr_frame *f UNUSED) {
+  if (syscall_no == SYS_HALT) {
+    power_off();
   }
 }
+
+void syscall_handler_arg1 (int syscall_no, struct intr_frame *f) {
+  int *ptr = f->esp;
+  ptr++;
+  int arg1 = *ptr;
+
+  if (syscall_no == SYS_EXIT) {
+    int status = arg1;
+    exit(status);
+  } else if (syscall_no == SYS_EXEC) {
+    char *file = (char *) arg1;
+    f->eax = process_execute (file);
+  } else if (syscall_no == SYS_WAIT) {
+    pid_t pid = (pid_t) arg1;
+    f->eax = process_wait (pid);
+  } else if (syscall_no == SYS_REMOVE) {
+
+  } else if (syscall_no == SYS_OPEN) {
+
+  } else if (syscall_no == SYS_FILESIZE) {
+
+  } else if (syscall_no == SYS_TELL) {
+
+  } else if (syscall_no == SYS_CLOSE) {
+
+  }
+}
+
+void syscall_handler_arg2 (int syscall_no, struct intr_frame *f) {
+  int *ptr = f->esp;
+  ptr++;
+  int arg1 = *ptr;
+  ptr++;
+  int arg2 = *ptr;
+
+  // if statements ?????
+}
+
+/* ==== ACTUAL SYSCALL FUNCTIONS ==== */
 
 void exit (int status) {
   // copy

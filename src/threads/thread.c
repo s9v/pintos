@@ -255,7 +255,7 @@ thread_unblock (struct thread *t)
   intr_set_level (old_level);
 }
 
-/* See process_wait() */
+/* BIZ YAZDIK See process_wait() */
 int
 thread_wait (tid_t tid)
 {
