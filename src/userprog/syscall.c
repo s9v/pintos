@@ -20,7 +20,7 @@ static void
 syscall_handler (struct intr_frame *f) 
 {
   int syscall_no = *(int *) f->esp;
-  printf ("system call! [%d]\n", syscall_no);
+  // printf ("system call! [%d]\n", syscall_no);
   if (syscall_no == SYS_WRITE) {
   	int *ptr = f->esp;
 
@@ -47,13 +47,14 @@ syscall_handler (struct intr_frame *f)
   	exit(status);
   }
   else {
-  	PANIC ("yaaani: [%d]", syscall_no);
+  	PANIC ("syscall not implemented: [%d]", syscall_no);
   }
 }
 
 void exit (int status) {
   // copy
-  char *file_name = thread_current()->name;
+  struct thread *cur = thread_current ();
+  char *file_name = cur->name;
   int file_name_len = strlen(file_name);
   char *file_name2 = malloc (file_name_len);
   strlcpy (file_name2, file_name, file_name_len + 1);
@@ -64,6 +65,7 @@ void exit (int status) {
 
   printf ("%s: exit(%d)\n", file_name_real, status); // KEEP THIS !!!!
 
+  cur->exit_status = status;
   thread_exit ();
 }
 

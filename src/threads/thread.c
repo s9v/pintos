@@ -25,6 +25,9 @@
    Do not modify this value. */
 #define THREAD_BASIC 0xd42df210
 
+/* CUSTOM: List of all threads (that haven't exited yet). */
+static struct list all_list;
+
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
@@ -94,6 +97,7 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
+  list_init (&all_list);
   list_init (&ready_list);
 
   /* Set up a thread structure for the running thread. */
@@ -169,6 +173,8 @@ tid_t
 thread_create (const char *name, int priority,
                thread_func *function, void *aux) 
 {
+  enum intr_level old_level = intr_disable ();
+
   struct thread *t;
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
@@ -200,8 +206,13 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
 
+  /* Add to ALL_LIST */
+  list_push_back (&all_list, &t->all_elem);
+
   /* Add to run queue. */
   thread_unblock (t);
+
+  intr_set_level (old_level);
 
   return tid;
 }
@@ -242,6 +253,42 @@ thread_unblock (struct thread *t)
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
+}
+
+/* See process_wait() */
+int
+thread_wait (tid_t tid)
+{
+  enum intr_level old_level = intr_disable ();
+  struct thread *t = NULL; // thread to wait for
+
+  /* Find thread with given TID */
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+      e = list_next (e)) {
+    struct thread *tt = list_entry (e, struct thread, all_elem);
+    if (tt->tid == tid) {
+      t = tt;
+      break;
+    }
+  }
+
+  // error: TID not found
+  if (t == NULL || t->parent != thread_current ())
+    return -1;
+
+  t->parent_waiting = true;
+
+  /* Wait for thread to exit */
+  sema_down (&t->exit_sema1);
+  
+  /* Save exit status */
+  int status = t->exit_status;
+  sema_up (&t->exit_sema2);
+
+  intr_set_level (old_level);
+
+  return status;
 }
 
 /* Returns the name of the running thread. */
@@ -291,7 +338,20 @@ thread_exit (void)
   /* Just set our status to dying and schedule another process.
      We will be destroyed during the call to schedule_tail(). */
   intr_disable ();
-  thread_current ()->status = THREAD_DYING;
+  struct thread *cur = thread_current ();
+
+  /* Remove from ALL_LIST */
+  list_remove (&cur->all_elem);
+
+  /* Let waiting parent to get exit status */
+  sema_up (&cur->exit_sema1);
+  if (cur->parent_waiting)
+    sema_down (&cur->exit_sema2);
+
+  // This should be below any sema operations!
+  cur->status = THREAD_DYING;
+
+  /* Reschedule */
   schedule ();
   NOT_REACHED ();
 }
@@ -405,6 +465,7 @@ kernel_thread (thread_func *function, void *aux)
                     
   intr_enable ();       /* The scheduler runs with interrupts off. */
   function (aux);       /* Execute the thread function. */
+  thread_current ()->exit_status = 0;
   thread_exit ();       /* If function() returns, kill the thread. */
 }
 
@@ -444,6 +505,15 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+  /* Parent thread */
+  struct thread *rt = running_thread ();
+  t->parent = (t != rt ?rt :NULL);
+
+  /* For thread_wait () */
+  t->parent_waiting = false;
+  sema_init (&t->exit_sema1, 0);
+  sema_init (&t->exit_sema2, 0);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

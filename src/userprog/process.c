@@ -90,11 +90,9 @@ start_process (void *f_name)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  while(true) { }
-
-  return -1;
+  return thread_wait (child_tid);
 }
 
 /* Free the current process's resources. */
@@ -102,6 +100,7 @@ void
 process_exit (void)
 {
   struct thread *curr = thread_current ();
+  // printf("process_exit-ing: %s\n", curr->name);
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -472,7 +471,7 @@ setup_stack (void **esp, const char *file_name)
         char **adr_arr_ptr = (char **)(next_str_ptr) - argc - 1;
         char **argv = adr_arr_ptr;
         for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
-          printf ("'%s'\n", token);
+          // printf ("setup_stack:args '%s'\n", token);
           int token_len = strlen(token);
           strlcpy (next_str_ptr, token, token_len + 1);
           *adr_arr_ptr = next_str_ptr;
@@ -508,7 +507,8 @@ setup_stack (void **esp, const char *file_name)
         // *(int *)(dest_fn - 16) = (int)0;
         // *esp = dest_fn - 16;
 
-        hex_dump((uintptr_t) PHYS_BASE-80, PHYS_BASE-80, sizeof(char) * 80, true);
+        /* Very useful hex_dump () */
+        // hex_dump((uintptr_t) PHYS_BASE-80, PHYS_BASE-80, sizeof(char) * 80, true);
         // PANIC ("silap");
       }
       else
