@@ -4,6 +4,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
 #include "threads/malloc.h"
 #include "threads/init.h"
 #include "threads/vaddr.h"
@@ -36,11 +37,19 @@ unsigned tell (int fd);
 void close (int fd);
 
 void check_user_ptr (int *ptr, int offset);
+void check_valid_ptr (const void *ptr);
 
 void check_user_ptr (int *ptr, int offset) {
   if (ptr <= (int *)0x08048000 || (int *)PHYS_BASE <= ptr + offset) {
     exit (-1);
   }
+}
+
+void check_valid_ptr (const void *ptr) {
+  struct thread *cur = thread_current ();
+
+  if (ptr == NULL || !is_user_vaddr (ptr) || pagedir_get_page (cur->pagedir, ptr) == NULL)
+    exit (-1);
 }
 
 void
@@ -54,6 +63,8 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
+  check_user_ptr (f->esp, 0);
+
   int syscall_no = *(int *) f->esp;
 
   switch (syscall_no) {
@@ -215,6 +226,8 @@ void exit (int status) {
 }
 
 int write (int fd, const void *buffer, unsigned length) {
+  check_valid_ptr (buffer);
+
 	if (fd == STDOUT_FILENO) {
 		putbuf (buffer, length);
 		return length;
@@ -234,9 +247,7 @@ int write (int fd, const void *buffer, unsigned length) {
 }
 
 bool create (const char *file, unsigned initial_size) {
-  if (file == NULL) {
-    exit (-1);
-  }
+  check_valid_ptr (file);
 
   lock_acquire (&fs_lock);
   bool success = filesys_create (file, initial_size);
@@ -246,6 +257,8 @@ bool create (const char *file, unsigned initial_size) {
 }
 
 bool remove (const char *file) {
+  check_valid_ptr (file);
+
   lock_acquire (&fs_lock);
   bool success = filesys_remove (file);
   lock_release (&fs_lock);
@@ -254,8 +267,7 @@ bool remove (const char *file) {
 }
 
 int open (const char *filename) {
-  if (filename == NULL)
-    exit (-1);
+  check_valid_ptr (filename);
 
   lock_acquire (&fs_lock);
   struct file *file = filesys_open (filename);
@@ -279,6 +291,8 @@ int filesize (int fd) {
 }
 
 int read (int fd, void *buffer, unsigned length) {
+  check_valid_ptr (buffer);
+
   if (fd == STDIN_FILENO) {
     // TODO Zaaaaaaaaaaaaaa
     // input_getc()
