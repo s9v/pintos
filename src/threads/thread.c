@@ -296,6 +296,7 @@ thread_wait (tid_t tid)
 
 int allocate_fd (void) {
   struct thread *cur = thread_current ();
+  // TODO lock guard below code
   return cur->next_fd++;
 }
 

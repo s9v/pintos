@@ -238,7 +238,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   // open real file_name
   char *save_ptr, *file_name_real;
   file_name_real = strtok_r (file_name2, " ", &save_ptr);
+
+  // printf ("load:filesys_open '%s' (%d)\n", file_name_real, strlen (file_name_real));
+  lock_acquire (&fs_lock);
   file = filesys_open (file_name_real);
+  lock_release (&fs_lock);
 
   if (file == NULL) 
     {
@@ -247,7 +251,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   // deny writes to exec file
+  lock_acquire (&fs_lock);
   file_deny_write (file);
+  lock_release (&fs_lock);
+
   thread_current ()->process_file = file;
 
   /* Read and verify executable header. */

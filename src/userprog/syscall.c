@@ -8,7 +8,6 @@
 #include "threads/malloc.h"
 #include "threads/init.h"
 #include "threads/vaddr.h"
-#include "threads/synch.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "filesys/inode.h"
@@ -17,7 +16,6 @@
 
 // Global variables
 struct lock fd_lock;
-struct lock fs_lock;
 
 static void syscall_handler (struct intr_frame *);
 
@@ -121,9 +119,16 @@ void syscall_handler_arg1 (int syscall_no, struct intr_frame *f) {
     char *filename = (char *) arg1;
 
     // TODO move file-exist check inside process_execute()
+    // duplicate string
+    int filename_len = strlen(filename);
+    char *filename2 = malloc (filename_len);
+    strlcpy (filename2, filename, filename_len + 1);
+    // get real filename
+    char *save_ptr, *filename_real;
+    filename_real = strtok_r (filename2, " ", &save_ptr);    
     // open file
     lock_acquire (&fs_lock);
-    struct file *file = filesys_open (filename);
+    struct file *file = filesys_open (filename_real);
     lock_release (&fs_lock);
 
     if (file == NULL) {
