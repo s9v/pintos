@@ -121,7 +121,7 @@ void syscall_handler_arg1 (int syscall_no, struct intr_frame *f) {
     // TODO move file-exist check inside process_execute()
     // duplicate string
     int filename_len = strlen(filename);
-    char *filename2 = malloc (filename_len);
+    char *filename2 = malloc (filename_len + 1);
     strlcpy (filename2, filename, filename_len + 1);
     // get real filename
     char *save_ptr, *filename_real;
@@ -217,7 +217,7 @@ void exit (int status) {
   struct thread *cur = thread_current ();
   char *file_name = cur->name;
   int file_name_len = strlen(file_name);
-  char *file_name2 = malloc (file_name_len);
+  char *file_name2 = malloc (file_name_len + 1);
   strlcpy (file_name2, file_name, file_name_len + 1);
 
   // open real file_name

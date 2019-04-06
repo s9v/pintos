@@ -233,7 +233,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Open executable file. */
   // copy
   int file_name_len = strlen(file_name);
-  char *file_name2 = malloc (file_name_len);
+  char *file_name2 = malloc (file_name_len + 1);
   strlcpy (file_name2, file_name, file_name_len + 1);
   // open real file_name
   char *save_ptr, *file_name_real;
@@ -468,7 +468,7 @@ setup_stack (void **esp, const char *file_name)
 
         // copy to FILE_NAME2
         int file_name_len = strlen(file_name);
-        char *file_name2 = malloc (file_name_len);
+        char *file_name2 = malloc (file_name_len + 1);
         strlcpy (file_name2, file_name, file_name_len+1);
         // tokenize
         char *token, *save_ptr;
