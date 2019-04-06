@@ -238,12 +238,19 @@ int open (const char *filename) {
   lock_acquire (&fs_lock);
   struct file *file = filesys_open (filename);
   lock_release (&fs_lock);
-  int fd = allocate_fd ();
-  
+  struct fd_elem *fde = thread_new_fd (file);
+
+  return fde->fd;
 }
 
 int filesize (int fd) {
+  struct fd_elem *fde = thread_get_fde (fd);
+  lock_acquire (&fs_lock);
+  struct inode *inode = file_get_inode(fde->file);
+  int length = inode_length (inode);
+  lock_release (&fs_lock);
 
+  return length;
 }
 
 int read (int fd, void *buffer, unsigned length) {
@@ -251,9 +258,29 @@ int read (int fd, void *buffer, unsigned length) {
 }
 
 void seek (int fd, unsigned position) {
-
+  struct fd_elem *fde = thread_get_fde (fd);
+  lock_acquire (&fs_lock);
+  file_seek (fde->file, position);
+  lock_release (&fs_lock);
 }
 
 unsigned tell (int fd) {
+  struct fd_elem *fde = thread_get_fde (fd);
+  lock_acquire (&fs_lock);
+  unsigned position = file_tell (fde->file);
+  lock_release (&fs_lock);
 
+  return position;
+}
+
+void close (int fd) {
+  struct fd_elem *fde = thread_get_fde (fd);
+
+  if (fde == NULL)
+    return;
+
+  lock_acquire (&fs_lock);
+  filesys_close (fde->file);
+  lock_release (&fs_lock);
+  thread_del_fde (fde);
 }
