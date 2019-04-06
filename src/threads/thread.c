@@ -75,6 +75,8 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+struct waitable_child_elem *thread_get_waitable (tid_t tid);
+struct thread *thread_get (tid_t tid);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -207,9 +209,6 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
 
-  /* Add to ALL_LIST */
-  list_push_back (&all_list, &t->all_elem);
-
   /* Add to run queue. */
   thread_unblock (t);
 
@@ -261,35 +260,64 @@ int
 thread_wait (tid_t tid)
 {
   enum intr_level old_level = intr_disable ();
-  struct thread *t = NULL; // thread to wait for
 
   /* Find thread with given TID */
-  struct list_elem *e;
-  for (e = list_begin (&all_list); e != list_end (&all_list);
-      e = list_next (e)) {
-    struct thread *tt = list_entry (e, struct thread, all_elem);
-    if (tt->tid == tid) {
-      t = tt;
-      break;
-    }
+  struct thread *cur = thread_current ();
+
+  struct waitable_child_elem *wce = thread_get_waitable (tid);
+
+  if (wce == NULL) {
+    struct thread *t = thread_get (tid);
+
+    // error: TID not found
+    if (t == NULL || t->par_tid != cur->tid)
+      return -1;
+
+    /* Wait for thread to exit */
+    t->waiting_parent = true;
+    sema_down (&t->exit_sema1);
+    sema_up (&t->exit_sema2);
+
+    wce = thread_get_waitable (tid);
   }
-
-  // error: TID not found
-  if (t == NULL || t->parent != thread_current ())
-    return -1;
-
-  t->parent_waiting = true;
-
-  /* Wait for thread to exit */
-  sema_down (&t->exit_sema1);
   
-  /* Save exit status */
-  int status = t->exit_status;
-  sema_up (&t->exit_sema2);
+  /* Read exit status */
+  ASSERT (wce != NULL);
+  int status = wce->status;
+
+  /* Free memory */
+  list_remove (&wce->elem);
+  free (wce);
 
   intr_set_level (old_level);
 
   return status;
+}
+
+struct waitable_child_elem *thread_get_waitable (tid_t tid) {
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+
+  for (e = list_begin (&cur->waitable_children); e != list_end (&cur->waitable_children); e = list_next (e)) {
+    struct waitable_child_elem *wce = list_entry (e, struct waitable_child_elem, elem);
+
+    if (wce->tid == tid)
+      return wce;
+  }
+
+  return NULL;
+}
+
+struct thread *thread_get (tid_t tid) {
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+      e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, all_elem);
+    if (t->tid == tid)
+      return t;
+  }
+
+  return NULL;
 }
 
 /* ==== FILE DESCRIPTORS ==== */
@@ -380,11 +408,22 @@ thread_exit (void)
   /* Remove from ALL_LIST */
   list_remove (&cur->all_elem);
 
-  /* Let waiting parent to get exit status */
-  sema_up (&cur->exit_sema1);
-  if (cur->parent_waiting)
-    sema_down (&cur->exit_sema2);
+  /* Add self to parent's  */
+  struct thread *par = thread_get (cur->par_tid);
 
+  if (par != NULL) {
+    struct waitable_child_elem *wce = malloc (sizeof (struct waitable_child_elem));
+    wce->tid = cur->tid;
+    wce->status = cur->exit_status;
+    list_push_back (&par->waitable_children, &wce->elem);
+    
+    /* Wake waiting parent */
+    if (cur->waiting_parent) {
+      sema_up (&cur->exit_sema1);
+      sema_down (&cur->exit_sema2);
+    }
+  }
+  
   // This should be below any sema operations!
   cur->status = THREAD_DYING;
 
@@ -543,14 +582,18 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+  /* Add to ALL_LIST */
+  list_push_back (&all_list, &t->all_elem);
+
   /* Parent thread */
   struct thread *rt = running_thread ();
-  t->parent = (t != rt ?rt :NULL);
+  t->par_tid = (t != rt ?rt->tid :-1);
+  t->waiting_parent = false;
 
   /* For thread_wait () */
-  t->parent_waiting = false;
   sema_init (&t->exit_sema1, 0);
   sema_init (&t->exit_sema2, 0);
+  list_init (&t->waitable_children);
 
   /* For file descriptors */
   list_init (&t->fd_list);

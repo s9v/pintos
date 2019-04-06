@@ -103,7 +103,11 @@ void
 process_exit (void)
 {
   struct thread *curr = thread_current ();
+
+  lock_acquire (&fs_lock);
   file_allow_write (curr->process_file);
+  file_close (curr->process_file);
+  lock_release (&fs_lock);
   // printf("process_exit-ing: %s\n", curr->name);
   uint32_t *pd;
 

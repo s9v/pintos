@@ -94,12 +94,13 @@ struct thread
     struct list_elem elem;              /* List element. */
 
     /* CUSTOM: Process wait */
-    struct thread *parent;
+    tid_t par_tid;
+    int exit_status;
     struct list_elem all_elem;          /* List element for ALL_LIST. */
     struct semaphore exit_sema1;
     struct semaphore exit_sema2;
-    int exit_status;
-    bool parent_waiting;
+    struct list waitable_children;
+    bool waiting_parent;
     
     /* CUSTOM: File descriptors */
     struct list fd_list;
@@ -133,13 +134,22 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+
 /* Lab 2 */
 int thread_wait (tid_t);
+
 struct fd_elem {
   struct file *file;
   int fd;
   struct list_elem elem;
 };
+
+struct waitable_child_elem {
+  tid_t tid;
+  int status;
+  struct list_elem elem;
+};
+
 int allocate_fd (void);
 struct fd_elem *thread_new_fd (struct file *file);
 struct fd_elem *thread_get_fde (int fd);
