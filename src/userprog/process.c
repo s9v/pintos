@@ -103,6 +103,7 @@ void
 process_exit (void)
 {
   struct thread *curr = thread_current ();
+  file_allow_write (curr->process_file);
   // printf("process_exit-ing: %s\n", curr->name);
   uint32_t *pd;
 
@@ -245,6 +246,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
+  // deny writes to exec file
+  file_deny_write (file);
+  thread_current ()->process_file = file;
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -328,7 +333,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  // file_close (file);
   return success;
 }
 

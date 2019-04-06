@@ -9,6 +9,9 @@
 #include "threads/vaddr.h"
 #include "threads/synch.h"
 #include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "filesys/inode.h"
+#include "devices/input.h"
 #include "string.h"
 
 // Global variables
@@ -32,6 +35,8 @@ void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
 
+void check_user_ptr (int *ptr, int offset);
+
 void check_user_ptr (int *ptr, int offset) {
   if (ptr <= (int *)0x08048000 || (int *)PHYS_BASE <= ptr + offset) {
     exit (-1);
@@ -44,17 +49,6 @@ syscall_init (void)
   lock_init (&fd_lock);
   lock_init (&fs_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-}
-
-static int allocate_fd (void) 
-{
-  int fd;
-
-  lock_acquire (&fd_lock);
-  fd = next_fd++;
-  lock_release (&fd_lock);
-
-  return fd;
 }
 
 static void
@@ -113,8 +107,25 @@ void syscall_handler_arg1 (int syscall_no, struct intr_frame *f) {
     int status = arg1;
     exit(status);
   } else if (syscall_no == SYS_EXEC) {
-    char *file = (char *) arg1;
-    f->eax = process_execute (file);
+    char *filename = (char *) arg1;
+
+    // TODO move file-exist check inside process_execute()
+    // open file
+    lock_acquire (&fs_lock);
+    struct file *file = filesys_open (filename);
+    lock_release (&fs_lock);
+
+    if (file == NULL) {
+      f->eax = -1;
+      return;
+    }
+
+    // close file
+    lock_acquire (&fs_lock);
+    file_close (file);
+    lock_release (&fs_lock);
+
+    f->eax = process_execute (filename);
   } else if (syscall_no == SYS_WAIT) {
     pid_t pid = (pid_t) arg1;
     f->eax = process_wait (pid);
@@ -204,13 +215,21 @@ void exit (int status) {
 }
 
 int write (int fd, const void *buffer, unsigned length) {
-	if (fd == 1) {
+	if (fd == STDOUT_FILENO) {
 		putbuf (buffer, length);
-		return 0;
+		return length;
 	}
 	else {
-		printf ("unknown fd: %d\n", fd);
-		return -1;
+    struct fd_elem *fde = thread_get_fde (fd);
+
+    if (fde == NULL) {
+      return -1;
+    }
+
+    lock_acquire (&fs_lock);
+    int bytes_written = file_write (fde->file, buffer, length);
+    lock_release (&fs_lock);
+		return bytes_written;
 	}
 }
 
@@ -235,11 +254,17 @@ bool remove (const char *file) {
 }
 
 int open (const char *filename) {
+  if (filename == NULL)
+    exit (-1);
+
   lock_acquire (&fs_lock);
   struct file *file = filesys_open (filename);
   lock_release (&fs_lock);
-  struct fd_elem *fde = thread_new_fd (file);
 
+  if (file == NULL)
+    return -1;
+
+  struct fd_elem *fde = thread_new_fd (file);
   return fde->fd;
 }
 
@@ -254,7 +279,23 @@ int filesize (int fd) {
 }
 
 int read (int fd, void *buffer, unsigned length) {
+  if (fd == STDIN_FILENO) {
+    // TODO Zaaaaaaaaaaaaaa
+    // input_getc()
+    return -1;
+  }
+  else {
+    struct fd_elem *fde = thread_get_fde (fd);
 
+    if (fde == NULL) {
+      return -1;
+    }
+
+    lock_acquire (&fs_lock);
+    int bytes_read = file_read (fde->file, buffer, length);
+    lock_release (&fs_lock);
+    return bytes_read;
+  }
 }
 
 void seek (int fd, unsigned position) {
@@ -280,7 +321,7 @@ void close (int fd) {
     return;
 
   lock_acquire (&fs_lock);
-  filesys_close (fde->file);
+  file_close (fde->file);
   lock_release (&fs_lock);
   thread_del_fde (fde);
 }

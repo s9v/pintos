@@ -8,6 +8,7 @@
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
@@ -293,30 +294,22 @@ thread_wait (tid_t tid)
 
 /* ==== FILE DESCRIPTORS ==== */
 
-int
-allocate_fd () {
+int allocate_fd (void) {
   struct thread *cur = thread_current ();
   return cur->next_fd++;
 }
 
-struct fd_elem {
-  struct file *file;
-  int fd;
-  struct list_elem *elem;
-}
-
-struct fd_elem *
-thread_new_fd (struct file *file) {
+struct fd_elem *thread_new_fd (struct file *file) {
   struct thread *cur = thread_current ();
-  struct fd_elem *fde = malloc (sizeof(file_desc));
+  struct fd_elem *fde = malloc (sizeof(struct fd_elem));
   fde->file = file;
   fde->fd = allocate_fd ();
-  list_push_back (cur->fd_list, &fde->elem);
+  list_push_back (&cur->fd_list, &fde->elem);
   return fde;
 }
 
-struct fd_elem *
-thread_get_fde (int fd) {
+struct fd_elem *thread_get_fde (int fd) {
+  struct thread *cur = thread_current ();
   struct list_elem *e;
   for (e = list_begin (&cur->fd_list); e != list_end (&cur->fd_list); e = list_next (e)) {
     struct fd_elem *fde = list_entry (e, struct fd_elem, elem);
@@ -327,8 +320,7 @@ thread_get_fde (int fd) {
   return NULL;
 }
 
-void
-thread_del_fde (struct fd_elem *fde) {
+void thread_del_fde (struct fd_elem *fde) {
   list_remove (&fde->elem);
   free (fde);
 }

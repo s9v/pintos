@@ -105,6 +105,9 @@ struct thread
     struct list fd_list;
     int next_fd;
 
+    /* ~~ PCB ~~ lol */
+    struct file *process_file;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -130,7 +133,17 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+/* Lab 2 */
 int thread_wait (tid_t);
+struct fd_elem {
+  struct file *file;
+  int fd;
+  struct list_elem elem;
+};
+int allocate_fd (void);
+struct fd_elem *thread_new_fd (struct file *file);
+struct fd_elem *thread_get_fde (int fd);
+void thread_del_fde (struct fd_elem *fde);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
