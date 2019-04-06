@@ -291,6 +291,50 @@ thread_wait (tid_t tid)
   return status;
 }
 
+/* ==== FILE DESCRIPTORS ==== */
+
+int
+allocate_fd () {
+  struct thread *cur = thread_current ();
+  return cur->next_fd++;
+}
+
+struct fd_elem {
+  struct file *file;
+  int fd;
+  struct list_elem *elem;
+}
+
+struct fd_elem *
+thread_new_fd (struct file *file) {
+  struct thread *cur = thread_current ();
+  struct fd_elem *fde = malloc (sizeof(file_desc));
+  fde->file = file;
+  fde->fd = allocate_fd ();
+  list_push_back (cur->fd_list, &fde->elem);
+  return fde;
+}
+
+struct fd_elem *
+thread_get_fde (int fd) {
+  struct list_elem *e;
+  for (e = list_begin (&cur->fd_list); e != list_end (&cur->fd_list); e = list_next (e)) {
+    struct fd_elem *fde = list_entry (e, struct fd_elem, elem);
+    if (fde->fd == fd)
+      return fde;
+  }
+
+  return NULL;
+}
+
+void
+thread_del_fde (struct fd_elem *fde) {
+  list_remove (&fde->elem);
+  free (fde);
+}
+
+/* ==== end of FILE DESCRIPTORS ==== */
+
 /* Returns the name of the running thread. */
 const char *
 thread_name (void) 
@@ -514,6 +558,10 @@ init_thread (struct thread *t, const char *name, int priority)
   t->parent_waiting = false;
   sema_init (&t->exit_sema1, 0);
   sema_init (&t->exit_sema2, 0);
+
+  /* For file descriptors */
+  list_init (&t->fd_list);
+  t->next_fd = 2;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

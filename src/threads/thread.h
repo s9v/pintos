@@ -93,13 +93,17 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
-    /* CUSTOM */
+    /* CUSTOM: Process wait */
     struct thread *parent;
     struct list_elem all_elem;          /* List element for ALL_LIST. */
     struct semaphore exit_sema1;
     struct semaphore exit_sema2;
     int exit_status;
     bool parent_waiting;
+    
+    /* CUSTOM: File descriptors */
+    struct list fd_list;
+    int next_fd;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
