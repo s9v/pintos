@@ -21,6 +21,8 @@
 #include "threads/malloc.h"
 #include "debug.h"
 
+#define LOCK_WRAP(CODE)  lock_acquire (&fs_lock); (CODE); lock_release (&fs_lock);
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 void free_files_from_fd_list(struct list *fd_list);
@@ -278,9 +280,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
   file_name_real = strtok_r (file_name2, " ", &save_ptr);
 
   // printf ("load:filesys_open '%s' (%d)\n", file_name_real, strlen (file_name_real));
-  lock_acquire (&fs_lock);
-  file = filesys_open (file_name_real);
-  lock_release (&fs_lock);
+  LOCK_WRAP(file = filesys_open (file_name_real))
+
+  // lock_acquire (&fs_lock);
+  // file = filesys_open (file_name_real);
+  // lock_release (&fs_lock);
 
   free (file_name2);
 
@@ -291,9 +295,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   // deny writes to exec file
-  lock_acquire (&fs_lock);
-  file_deny_write (file);
-  lock_release (&fs_lock);
+  LOCK_WRAP(file_deny_write (file))
+  // lock_acquire (&fs_lock);
+  // file_deny_write (file);
+  // lock_release (&fs_lock);
 
   thread_current ()->process_file = file;
 

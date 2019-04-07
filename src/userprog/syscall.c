@@ -326,7 +326,7 @@ unsigned tell (int fd) {
 
 
 pid_t exec (const char *filename) {
-  struct thread *cur = thread_current ();
+  // struct thread *cur = thread_current ();
   // printf("[EXEC]  name:<%s>  tid:%d  filename:<%s>\n", cur->name, cur->tid, filename);
 
   // duplicate string
