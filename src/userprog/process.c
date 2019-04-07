@@ -23,16 +23,25 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-
+void free_files_from_fd_list(struct list *fd_list);
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
+
+struct exec_data {
+  char *filename;
+  bool success;
+  struct semaphore sema;
+};
+
 tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
   tid_t tid;
+
+  struct exec_data data;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -41,19 +50,31 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  data.filename = fn_copy;
+  sema_init (&data.sema, 0);
+  data.success = false;
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, (void *)&data);
+  sema_down (&data.sema);
+
+  // printf("[process_execute] filename:<%s>  returned tid:%d\n", file_name, tid);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+
+  if (data.success == false)
+    tid = TID_ERROR;
+
   return tid;
 }
 
 /* A thread function that loads a user process and makes it start
    running. */
 static void
-start_process (void *f_name)
+start_process (void *_data)
 {
-  char *file_name = f_name;
+  struct exec_data *data = (struct exec_data *)_data;
+  char *file_name = data->filename;
   struct intr_frame if_;
   bool success;
 
@@ -63,6 +84,9 @@ start_process (void *f_name)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+
+  data->success = success;
+  sema_up (&data->sema);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -98,15 +122,25 @@ process_wait (tid_t child_tid)
   return thread_wait (child_tid);
 }
 
+void free_files_from_fd_list(struct list *fd_list){
+  struct list_elem *e, *next;
+
+  for (e = list_begin (fd_list); e != list_end (fd_list); e = next) {
+    struct fd_elem *fde = list_entry (e, struct fd_elem, elem);
+    next = list_next (e);
+    file_close(fde->file);
+    free (fde);
+  }
+}
+
 /* Free the current process's resources. */
-void
-process_exit (void)
-{
+void process_exit (void) {
   struct thread *curr = thread_current ();
 
   lock_acquire (&fs_lock);
   file_allow_write (curr->process_file);
   file_close (curr->process_file);
+  free_files_from_fd_list(&curr->fd_list);
   lock_release (&fs_lock);
   // printf("process_exit-ing: %s\n", curr->name);
   uint32_t *pd;
@@ -248,6 +282,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   file = filesys_open (file_name_real);
   lock_release (&fs_lock);
 
+  free (file_name2);
+
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -280,12 +316,16 @@ load (const char *file_name, void (**eip) (void), void **esp)
     {
       struct Elf32_Phdr phdr;
 
-      if (file_ofs < 0 || file_ofs > file_length (file))
+      if (file_ofs < 0 || file_ofs > file_length (file)){
+        // printf ("load: fail   1\n");
         goto done;
+      }
       file_seek (file, file_ofs);
 
-      if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
+      if (file_read (file, &phdr, sizeof phdr) != sizeof phdr) {
+        // printf ("load: fail   2\n");
         goto done;
+      }
       file_ofs += sizeof phdr;
       switch (phdr.p_type) 
         {
@@ -299,6 +339,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
         case PT_DYNAMIC:
         case PT_INTERP:
         case PT_SHLIB:
+          // printf ("load: fail   3\n");
           goto done;
         case PT_LOAD:
           if (validate_segment (&phdr, file)) 
@@ -324,18 +365,24 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
               if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable))
+                                 read_bytes, zero_bytes, writable)) {
+                // printf ("load: fail   4\n");
                 goto done;
+              }
             }
-          else
+          else {
+            // printf ("load: fail   5\n");
             goto done;
+          }
           break;
         }
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp, file_name))
+  if (!setup_stack (esp, file_name)) {
+    // printf ("load: fail   6\n");
     goto done;
+  }
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
@@ -465,9 +512,11 @@ setup_stack (void **esp, const char *file_name)
   bool success = false;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  // printf("setup_stack: kpage:%p\n", kpage);
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+      // printf("setup_stack: success:%d\n", success);
       if (success) {
 
         // copy to FILE_NAME2
@@ -498,6 +547,8 @@ setup_stack (void **esp, const char *file_name)
           next_str_ptr += token_len + 1;
         }
 
+        free (file_name2);
+
         void **stack_ptr = (void *)argv;
 
         // push argv
@@ -512,23 +563,6 @@ setup_stack (void **esp, const char *file_name)
         stack_ptr -= 1;
         *stack_ptr = (void *)0;
         *esp = stack_ptr;
-
-        // ~~~ OLD ~~~
-        // int fn_size = strlen(file_name);
-        //
-        // char *dest_fn = (char *)(PHYS_BASE - fn_size - 1);
-        // strlcpy(dest_fn, file_name, fn_size + 1);
-        //
-        // *(int *)(dest_fn - 4) = (int)NULL;
-        // *(int *)(dest_fn - 8) = (int)dest_fn;
-        // *(int *)(dest_fn - 8) = (dest_fn - 8);
-        // *(int *)(dest_fn - 12) = (int)1;
-        // *(int *)(dest_fn - 16) = (int)0;
-        // *esp = dest_fn - 16;
-
-        /* Very useful hex_dump () */
-        // hex_dump((uintptr_t) PHYS_BASE-80, PHYS_BASE-80, sizeof(char) * 80, true);
-        // PANIC ("silap");
       }
       else
         palloc_free_page (kpage);
@@ -552,6 +586,18 @@ install_page (void *upage, void *kpage, bool writable)
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
-  return (pagedir_get_page (t->pagedir, upage) == NULL
-          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+  bool f1 = pagedir_get_page (t->pagedir, upage) == NULL;
+  // printf("install_page:  f1:%d\n", f1);
+  
+  bool f2 = false;
+  if (f1) {
+    f2 = pagedir_set_page (t->pagedir, upage, kpage, writable);
+    // printf("install_page:  f2:%d\n", f2);
+
+    // if (!f2) {
+    //   printf("dummy\n");
+    // }
+  }
+
+  return (f1 && f2);
 }

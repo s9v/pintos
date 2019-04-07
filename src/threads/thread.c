@@ -77,6 +77,7 @@ void schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 struct waitable_child_elem *thread_get_waitable (tid_t tid);
 struct thread *thread_get (tid_t tid);
+void free_waitable_children(struct list *waitable_children);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -264,11 +265,14 @@ thread_wait (tid_t tid)
   /* Find thread with given TID */
   struct thread *cur = thread_current ();
 
+  // printf("[thread_wait] %s  waiting for %d\n", cur->name, tid);
+
   struct waitable_child_elem *wce = thread_get_waitable (tid);
 
   if (wce == NULL) {
     struct thread *t = thread_get (tid);
 
+    // printf("[thread_wait]:wce == NULL  %s %d %d\n",t->name,t->par_tid,cur->tid);
     // error: TID not found
     if (t == NULL || t->par_tid != cur->tid)
       return -1;
@@ -325,6 +329,7 @@ struct thread *thread_get (tid_t tid) {
 int allocate_fd (void) {
   struct thread *cur = thread_current ();
   // TODO lock guard below code
+  // (not necessary until allocate_fd is called from timer interrupts)
   return cur->next_fd++;
 }
 
@@ -389,6 +394,16 @@ thread_tid (void)
   return thread_current ()->tid;
 }
 
+void free_waitable_children(struct list *waitable_children){
+  struct list_elem *e, *next;
+
+  for (e = list_begin (waitable_children); e != list_end (waitable_children); e = next) {
+    struct waitable_child_elem *wce = list_entry (e, struct waitable_child_elem, elem);
+    next = list_next (e);
+    free(wce);
+  }
+}
+
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
 void
@@ -423,6 +438,9 @@ thread_exit (void)
       sema_down (&cur->exit_sema2);
     }
   }
+
+  /*free waitable children*/
+  free_waitable_children(&cur->waitable_children);
   
   // This should be below any sema operations!
   cur->status = THREAD_DYING;

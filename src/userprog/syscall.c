@@ -33,6 +33,7 @@ int read (int fd, void *buffer, unsigned length);
 void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
+pid_t exec (const char *file);
 
 void check_user_ptr (int *ptr, int offset);
 void check_valid_ptr (const void *ptr);
@@ -112,43 +113,20 @@ void syscall_handler_arg1 (int syscall_no, struct intr_frame *f) {
   ptr++;
   int arg1 = *ptr;
 
-  if (syscall_no == SYS_EXIT) {
+  if (syscall_no == SYS_EXIT) { //1
     int status = arg1;
     exit(status);
-  } else if (syscall_no == SYS_EXEC) {
+  } else if (syscall_no == SYS_EXEC) { //2
     char *filename = (char *) arg1;
 
-    // TODO move file-exist check inside process_execute()
-    // duplicate string
-    int filename_len = strlen(filename);
-    char *filename2 = malloc (filename_len + 1);
-    strlcpy (filename2, filename, filename_len + 1);
-    // get real filename
-    char *save_ptr, *filename_real;
-    filename_real = strtok_r (filename2, " ", &save_ptr);    
-    // open file
-    lock_acquire (&fs_lock);
-    struct file *file = filesys_open (filename_real);
-    lock_release (&fs_lock);
-
-    if (file == NULL) {
-      f->eax = -1;
-      return;
-    }
-
-    // close file
-    lock_acquire (&fs_lock);
-    file_close (file);
-    lock_release (&fs_lock);
-
-    f->eax = process_execute (filename);
-  } else if (syscall_no == SYS_WAIT) {
+    f->eax = exec (filename);
+  } else if (syscall_no == SYS_WAIT) { //3
     pid_t pid = (pid_t) arg1;
     f->eax = process_wait (pid);
   } else if (syscall_no == SYS_REMOVE) {
     char *file = (char *) arg1;
     f->eax = remove (file);
-  } else if (syscall_no == SYS_OPEN) {
+  } else if (syscall_no == SYS_OPEN) { //6
     char *file = (char *) arg1;
     f->eax = open (file);
   } else if (syscall_no == SYS_FILESIZE) {
@@ -213,8 +191,10 @@ void syscall_handler_arg3 (int syscall_no, struct intr_frame *f) {
 /* ==== ACTUAL SYSCALL FUNCTIONS ==== */
 
 void exit (int status) {
-  // copy
   struct thread *cur = thread_current ();
+  // printf("[EXIT]  name:<%s>  tid:%d  status:<%d>\n", cur->name, cur->tid, status);
+
+  // copy
   char *file_name = cur->name;
   int file_name_len = strlen(file_name);
   char *file_name2 = malloc (file_name_len + 1);
@@ -225,6 +205,10 @@ void exit (int status) {
   file_name_real = strtok_r (file_name2, " ", &save_ptr);
 
   printf ("%s: exit(%d)\n", file_name_real, status); // KEEP THIS !!!!
+  //TODO rm this and uncomment above
+  // printf ("%s (%s): exit(%d)\n", cur->name, file_name_real, status); // KEEP THIS !!!!
+
+  free (file_name2);
 
   cur->exit_status = status;
   thread_exit ();
@@ -272,6 +256,9 @@ bool remove (const char *file) {
 }
 
 int open (const char *filename) {
+  // struct thread *cur = thread_current ();
+  // printf("[OPEN]  name:<%s>  tid:%d  filename:<%s>\n", cur->name, cur->tid, filename);
+
   check_valid_ptr (filename);
 
   lock_acquire (&fs_lock);
@@ -287,6 +274,10 @@ int open (const char *filename) {
 
 int filesize (int fd) {
   struct fd_elem *fde = thread_get_fde (fd);
+
+  if (fde == NULL)
+    return -1;
+
   lock_acquire (&fs_lock);
   struct inode *inode = file_get_inode(fde->file);
   int length = inode_length (inode);
@@ -299,8 +290,8 @@ int read (int fd, void *buffer, unsigned length) {
   check_valid_ptr (buffer);
 
   if (fd == STDIN_FILENO) {
-    // TODO Zaaaaaaaaaaaaaa
-    // input_getc()
+    // TODO: Implement input_getc()
+    // May be for lab3 or lab4
     return -1;
   }
   else {
@@ -331,6 +322,38 @@ unsigned tell (int fd) {
   lock_release (&fs_lock);
 
   return position;
+}
+
+
+pid_t exec (const char *filename) {
+  struct thread *cur = thread_current ();
+  // printf("[EXEC]  name:<%s>  tid:%d  filename:<%s>\n", cur->name, cur->tid, filename);
+
+  // duplicate string
+  int filename_len = strlen(filename);
+  char *filename2 = malloc (filename_len + 1);
+  strlcpy (filename2, filename, filename_len + 1);
+  // get real filename
+  char *save_ptr, *filename_real;
+  filename_real = strtok_r (filename2, " ", &save_ptr);    
+  // open file
+  lock_acquire (&fs_lock);
+  struct file *file = filesys_open (filename_real);
+  lock_release (&fs_lock);
+
+  free (filename2);
+
+  if (file == NULL) {
+    // printf("[EXEC]:file == NULL  (couldn't open such file)\n");
+    return -1;
+  }
+
+  // close file
+  lock_acquire (&fs_lock);
+  file_close (file);
+  lock_release (&fs_lock);
+
+  return process_execute (filename);
 }
 
 void close (int fd) {
