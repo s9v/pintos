@@ -34,6 +34,8 @@
 #include "filesys/filesys.h"
 #include "filesys/fsutil.h"
 #endif
+/* Project 3 - Virtual Memory */
+#include "vm/frame.h"
 
 /* Amount of physical memory, in 4 kB pages. */
 size_t ram_pages;
@@ -114,6 +116,9 @@ main (void)
   disk_init ();
   filesys_init (format_filesys);
 #endif
+
+  /* Project 3 - Virtual Memory */
+  frame_init ();
 
   printf ("Boot complete.\n");
   

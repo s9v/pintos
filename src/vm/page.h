@@ -1,5 +1,7 @@
 #ifndef VM_PAGE_H
 #define VM_PAGE_H
+#include <stdint.h>
+#include <stdbool.h>
 
 struct sup_page_table_entry 
 {

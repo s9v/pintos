@@ -19,6 +19,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "vm/frame.h"
 #include "debug.h"
 
 #define LOCK_WRAP(CODE)  lock_acquire (&fs_lock); (CODE); lock_release (&fs_lock);
@@ -513,65 +514,60 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, const char *file_name) 
 {
-  uint8_t *kpage;
   bool success = false;
+  void *addr = ((uint8_t *) PHYS_BASE) - PGSIZE;
+  success = allocate_frame (addr);
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  // printf("setup_stack: kpage:%p\n", kpage);
-  if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      // printf("setup_stack: success:%d\n", success);
-      if (success) {
+  // printf("success : %d\n", success);
 
-        // copy to FILE_NAME2
-        int file_name_len = strlen(file_name);
-        char *file_name2 = malloc (file_name_len + 1);
-        strlcpy (file_name2, file_name, file_name_len+1);
-        // tokenize
-        char *token, *save_ptr;
-        int total_len = 0;
-        int argc = 0;
-        for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
-          int token_len = strlen(token);
-          total_len += token_len + 1;
-          argc++;
-        }
-
-        strlcpy (file_name2, file_name, file_name_len+1);
-
-        char *next_str_ptr = (char *)(PHYS_BASE) - total_len;
-        char **adr_arr_ptr = (char **)(next_str_ptr) - argc - 1;
-        char **argv = adr_arr_ptr;
-        for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
-          // printf ("setup_stack:args '%s'\n", token);
-          int token_len = strlen(token);
-          strlcpy (next_str_ptr, token, token_len + 1);
-          *adr_arr_ptr = next_str_ptr;
-          adr_arr_ptr++;
-          next_str_ptr += token_len + 1;
-        }
-
-        free (file_name2);
-
-        void **stack_ptr = (void *)argv;
-
-        // push argv
-        stack_ptr -= 1;
-        *stack_ptr = argv;
-
-        // push argc
-        stack_ptr -= 1;
-        *(int *)stack_ptr = argc;
-
-        // push return address
-        stack_ptr -= 1;
-        *stack_ptr = (void *)0;
-        *esp = stack_ptr;
-      }
-      else
-        palloc_free_page (kpage);
+  if (success) 
+  {
+    // copy to FILE_NAME2
+    int file_name_len = strlen(file_name);
+    char *file_name2 = malloc (file_name_len + 1);
+    strlcpy (file_name2, file_name, file_name_len+1);
+    // tokenize
+    char *token, *save_ptr;
+    int total_len = 0;
+    int argc = 0;
+    for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
+      int token_len = strlen(token);
+      total_len += token_len + 1;
+      argc++;
     }
+
+    strlcpy (file_name2, file_name, file_name_len+1);
+
+    char *next_str_ptr = (char *)(PHYS_BASE) - total_len;
+    char **adr_arr_ptr = (char **)(next_str_ptr) - argc - 1;
+    char **argv = adr_arr_ptr;
+    for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
+      // printf ("setup_stack:args '%s'\n", token);
+      int token_len = strlen(token);
+      strlcpy (next_str_ptr, token, token_len + 1);
+      *adr_arr_ptr = next_str_ptr;
+      adr_arr_ptr++;
+      next_str_ptr += token_len + 1;
+    }
+
+    free (file_name2);
+
+    void **stack_ptr = (void *)argv;
+
+    // push argv
+    stack_ptr -= 1;
+    *stack_ptr = argv;
+
+    // push argc
+    stack_ptr -= 1;
+    *(int *)stack_ptr = argc;
+
+    // push return address
+    stack_ptr -= 1;
+    *stack_ptr = (void *)0;
+    *esp = stack_ptr;
+  }
+
   return success;
 }
 
@@ -604,5 +600,6 @@ install_page (void *upage, void *kpage, bool writable)
     // }
   }
 
+  // return (pagedir_get_page (t->pagedir, upage) == NULL && pagedir_set_page (t->pagedir, upage, kpage, writable));
   return (f1 && f2);
 }

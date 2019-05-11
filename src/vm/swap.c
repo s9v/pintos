@@ -19,7 +19,7 @@ static struct lock swap_lock;
 void 
 swap_init (void)
 {
-
+	return ;
 }
 
 /*
@@ -38,7 +38,7 @@ bool
 swap_in (void *addr)
 {
 
-
+	return true;
 }
 
 /* 
@@ -59,7 +59,7 @@ bool
 swap_out (void)
 {
 
-
+	return true;
 }
 
 /* 
@@ -68,14 +68,13 @@ swap_out (void)
  */
 void read_from_disk (uint8_t *frame, int index)
 {
-
-
+	return;
 }
 
 /* Write data to swap device from frame */
 void write_to_disk (uint8_t *frame, int index)
 {
-
+	return;
 
 }
 

@@ -1,4 +1,5 @@
 #include "userprog/syscall.h"
+#include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
@@ -34,6 +35,8 @@ void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
 pid_t exec (const char *file);
+mapid_t mmap (int fd, void* addr);
+void munmap (mapid_t mapping);
 
 void check_user_ptr (int *ptr, int offset);
 void check_valid_ptr (const void *ptr);
