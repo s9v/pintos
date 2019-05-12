@@ -9,9 +9,8 @@ static struct disk *swap_device;
 
 /* Tracks in-use and free swap slots */
 static struct bitmap *swap_table;
-
-/* Protects swap_table */
-static struct lock swap_lock;
+static struct lock swap_lock; // Protects swap_table
+struct disk *swap_disk;
 
 /* 
  * Initialize swap_device, swap_table, and swap_lock.
@@ -19,6 +18,10 @@ static struct lock swap_lock;
 void 
 swap_init (void)
 {
+	swap_disk = disk_get (1, 1);
+
+	/* THIS IS WHERE WE LEFT OFF */
+
 	return ;
 }
 
@@ -68,6 +71,7 @@ swap_out (void)
  */
 void read_from_disk (uint8_t *frame, int index)
 {
+
 	return;
 }
 

@@ -5,6 +5,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 #include "vm/frame.h"
 
 /* Number of page faults processed. */
@@ -150,7 +151,47 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  /* Check if fault_addr is valid */
+  struct thread *t = thread_current ();
+  void *faddr_page = pg_round_down (fault_addr);
 
+  // TODO: Check if fauld_addr corresponds to page evicted to disk.
+  //       Only after that load from file segment.
+
+  /* Access to evicted page */
+  struct spt_entry spte;
+  spte->upage = faddr_page;
+  struct hash_elem *e = hash_find (&t->sp_table, &spte->elem);
+  if (e != NULL) {
+    if (!allocate_frame (faddr_page)) {
+      // TODO ???
+      exit (-1)
+    }
+
+    return;
+  }
+
+  /* Access to a program segment (code, data, etc) */
+  struct list_elem *e;
+  for (e = list_begin(&t->segments); e != list_end (&t->segments); e = list_next (e)) {
+    struct program_segment *ps = list_entry (e, struct program_segment, elem);
+    int segment_size = ps->read_bytes + ps->zero_bytes;
+
+    // Lazy-load pages of the segment
+    if (ps->upage <= fault_addr && fault_addr < ps->upage + segment_size) {
+      if (!load_segment_page (ps, faddr_page)) {
+        printf ("failed to load segment page\n");
+        exit (-1);
+      }
+      return;
+    }
+  }
+
+  /* Access to edge of stack (aka Stack Growth) */
+  // ...
+
+  printf ("fault_addr is invalid\n");
+  exit (-1);
 
   // if (!allocate_frame(fault_addr))
   //   PANIC("!!!");
@@ -164,7 +205,6 @@ page_fault (struct intr_frame *f)
   //         write ? "writing" : "reading",
   //         user ? "user" : "kernel");
   // kill (f);
-  exit (-1);
   
 }
 

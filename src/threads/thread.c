@@ -15,6 +15,7 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+#include "vm/page.h"
 
 
 /* Random value for struct thread's `magic' member.
@@ -616,6 +617,12 @@ init_thread (struct thread *t, const char *name, int priority)
   /* For file descriptors */
   list_init (&t->fd_list);
   t->next_fd = 2;
+
+  /* For program segments */
+  list_init (&t->segments);
+
+  /* For supplemental page table */
+  page_init ();
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

@@ -472,40 +472,49 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
-  while (read_bytes > 0 || zero_bytes > 0) 
-    {
-      /* Do calculate how to fill this page.
-         We will read PAGE_READ_BYTES bytes from FILE
-         and zero the final PAGE_ZERO_BYTES bytes. */
-      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+  struct program_segment *ps = (struct program_segment *) malloc (sizeof (struct program_segment));
+  ps->file = file;
+  ps->ofs = ofs;
+  ps->upage = upage;
+  ps->read_bytes = read_bytes;
+  ps->zero_bytes = zero_bytes;
+  ps->writable = writable;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
+  struct thread *t = thread_current ();
+  list_push_back (&t->segments, &ps->elem);
 
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+  return load_segment_page(ps, upage);
+}
 
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
+bool
+load_segment_page (struct program_segment *ps, void *upage_) {
+  ASSERT (pg_ofs (upage_) == 0); // upage_ should be page-aligned
+  
+  /* Do calculate how to fill THIS page.
+     We will read PAGE_READ_BYTES bytes from FILE
+     and zero the final PAGE_ZERO_BYTES bytes. */
+  int page_read_bytes = (int)ps->upage + ps->read_bytes - (int)upage_;
+  
+  if (page_read_bytes < 0)
+    page_read_bytes = 0;
+  else if (page_read_bytes > PGSIZE)
+    page_read_bytes = PGSIZE;
+  
+  int page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Advance. */
-      read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
-      upage += PGSIZE;
-    }
+  /* Get a page of memory. */
+  void *kpage;
+  if ((kpage = allocate_frame (upage_, ps->writable)) == NULL)
+    return false;
+
+  /* Load from disk */
+  file_seek (ps->file, ps->ofs + upage_ - ps->upage);
+  if (file_read (ps->file, kpage, page_read_bytes) != (int) page_read_bytes)
+    return false;
+  
+  /* Zero out rest of final page */
+  memset (kpage + page_read_bytes, 0, page_zero_bytes);
+
   return true;
 }
 
@@ -516,7 +525,7 @@ setup_stack (void **esp, const char *file_name)
 {
   bool success = false;
   void *addr = ((uint8_t *) PHYS_BASE) - PGSIZE;
-  success = allocate_frame (addr);
+  success = allocate_frame (addr, true);
 
   // printf("success : %d\n", success);
 

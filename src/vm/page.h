@@ -2,12 +2,19 @@
 #define VM_PAGE_H
 #include <stdint.h>
 #include <stdbool.h>
+#include <hash.h>
 
-struct sup_page_table_entry 
+// Supplemental page table entry
+struct spt_entry 
 {
-	uint32_t* user_vaddr;
-	uint64_t access_time;
+	void *upage;
+	struct hash elem_hash;
 
+	bool is_mmapped;
+	bool is_readonly;
+	bool is_segment;
+
+	uint64_t access_time;
 	bool dirty;
 	bool accessed;
 };

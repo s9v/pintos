@@ -13,7 +13,7 @@ struct frame_table_entry
 };
 
 void frame_init (void);
-bool allocate_frame (void *addr);
+void *allocate_frame (void *addr, bool writable);
 
 
 #endif /* vm/frame.h */

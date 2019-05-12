@@ -36,6 +36,7 @@
 #endif
 /* Project 3 - Virtual Memory */
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Amount of physical memory, in 4 kB pages. */
 size_t ram_pages;
@@ -119,6 +120,7 @@ main (void)
 
   /* Project 3 - Virtual Memory */
   frame_init ();
+  swap_init ();
 
   printf ("Boot complete.\n");
   

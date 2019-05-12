@@ -6,6 +6,10 @@
 #include <stdint.h>
 #include "threads/synch.h"
 
+typedef int tid_t;
+
+#include "userprog/process.h"
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -17,7 +21,6 @@ enum thread_status
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
-typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -106,8 +109,11 @@ struct thread
     struct list fd_list;
     int next_fd;
 
-    /* ~~ PCB ~~ lol */
+    /* Fake PCB */
     struct file *process_file;
+    // vm
+    struct list segments;
+    struct hash sp_table; // supplemental page table
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
