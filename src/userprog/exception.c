@@ -6,7 +6,10 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+
 #include "vm/frame.h"
+#include "vm/page.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -155,23 +158,15 @@ page_fault (struct intr_frame *f)
   struct thread *t = thread_current ();
   void *faddr_page = pg_round_down (fault_addr);
 
-  // TODO: Check if fauld_addr corresponds to page evicted to disk.
-  //       Only after that load from file segment.
-
-  /* Access to evicted page */
-  struct spt_entry spte;
-  spte->upage = faddr_page;
-  struct hash_elem *e = hash_find (&t->sp_table, &spte->elem);
-  if (e != NULL) {
-    if (!allocate_frame (faddr_page)) {
-      // TODO ???
-      exit (-1)
-    }
-
+  /* Access to evicted page. Load it back from swap disk, mapped file, or program file. */
+  struct spt_entry *spte = hash_get_spte (faddr_page);
+  
+  if (spte != NULL) { // faddr_page is allocated, but evicted!
+    load_page (spte);
     return;
   }
 
-  /* Access to a program segment (code, data, etc) */
+  /* Access to a program segment never loaded before. Lazy load it. */
   struct list_elem *e;
   for (e = list_begin(&t->segments); e != list_end (&t->segments); e = list_next (e)) {
     struct program_segment *ps = list_entry (e, struct program_segment, elem);
@@ -179,16 +174,20 @@ page_fault (struct intr_frame *f)
 
     // Lazy-load pages of the segment
     if (ps->upage <= fault_addr && fault_addr < ps->upage + segment_size) {
-      if (!load_segment_page (ps, faddr_page)) {
+      if (!load_new_segment_page (ps, faddr_page)) {
         printf ("failed to load segment page\n");
         exit (-1);
       }
       return;
     }
   }
+  
 
-  /* Access to edge of stack (aka Stack Growth) */
+  /* Access to edge of stack never loaded before. Grow the stack. */
   // ...
+
+  /* Access to mapped file page never loaded before. Lazy load it. */
+
 
   printf ("fault_addr is invalid\n");
   exit (-1);

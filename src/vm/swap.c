@@ -2,16 +2,18 @@
 #include "devices/disk.h"
 #include "threads/synch.h"
 #include <bitmap.h>
+#include <stdbool.h>
 
+#define SECTORS_PER_SLOT   (PGSIZE / DISK_SECTOR_SIZE)
 
 /* The swap device */
 static struct disk *swap_device;
 
 /* Tracks in-use and free swap slots */
-static struct bitmap *swap_table;
-static struct lock swap_lock; // Protects swap_table
+static struct lock swap_lock; // Protects swap_bitmap
 struct disk *swap_disk;
-
+struct bitmap *swap_bitmap;
+int swap_nslots;
 /* 
  * Initialize swap_device, swap_table, and swap_lock.
  */
@@ -19,10 +21,9 @@ void
 swap_init (void)
 {
 	swap_disk = disk_get (1, 1);
-
-	/* THIS IS WHERE WE LEFT OFF */
-
-	return ;
+	disk_sector_t nsectors = disk_size (swap_disk);
+	swap_nslots = nsectors * DISK_SECTOR_SIZE / PGSIZE;
+	swap_bitmap = bitmap_create (swap_nslots);
 }
 
 /*
@@ -38,9 +39,11 @@ swap_init (void)
  * of the disk into the frame. 
  */ 
 bool 
-swap_in (void *addr)
+swap_in (void *frame, int slot_idx)
 {
-
+	read_from_disk (frame, slot_idx);
+	bitmap_reset (swap_bitmap, slot_idx);
+	
 	return true;
 }
 
@@ -58,27 +61,40 @@ swap_in (void *addr)
  * 4. Find a free block to write you data. Use swap table to get track
  * of in-use and free swap slots.
  */
-bool
-swap_out (void)
+int
+swap_out (void *frame)
 {
+	int slot_idx = bitmap_scan_and_flip (swap_bitmap, 0, 1, false);
+	
+	if (slot_idx == BITMAP_ERROR)
+		return BITMAP_ERROR;
 
-	return true;
+	write_to_disk (frame, slot_idx);
+	return slot_idx;
 }
 
 /* 
  * Read data from swap device to frame. 
  * Look at device/disk.c
  */
-void read_from_disk (uint8_t *frame, int index)
+void read_from_disk (uint8_t *frame, int slot_idx)
 {
-
-	return;
+	disk_sector_t sec_no = slot_idx * SECTORS_PER_SLOT;
+	int sec_offset;
+	for (sec_offset = 0; sec_offset < SECTORS_PER_SLOT; sec_offset++) {
+		disk_read (swap_disk, sec_no + sec_offset, frame);
+		frame += DISK_SECTOR_SIZE;
+	}
 }
 
 /* Write data to swap device from frame */
-void write_to_disk (uint8_t *frame, int index)
+void write_to_disk (uint8_t *frame, int slot_idx)
 {
-	return;
-
+	disk_sector_t sec_no = slot_idx * SECTORS_PER_SLOT;
+	int sec_offset;
+	for (sec_offset = 0; sec_offset < SECTORS_PER_SLOT; sec_offset++) {
+		disk_write (swap_disk, sec_no + sec_offset, frame);
+		frame += DISK_SECTOR_SIZE;
+	}
 }
 

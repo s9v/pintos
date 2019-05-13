@@ -20,6 +20,7 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "vm/frame.h"
+#include "vm/page.h"
 #include "debug.h"
 
 #define LOCK_WRAP(CODE)  lock_acquire (&fs_lock); (CODE); lock_release (&fs_lock);
@@ -322,16 +323,14 @@ load (const char *file_name, void (**eip) (void), void **esp)
     {
       struct Elf32_Phdr phdr;
 
-      if (file_ofs < 0 || file_ofs > file_length (file)){
-        // printf ("load: fail   1\n");
+      if (file_ofs < 0 || file_ofs > file_length (file))
         goto done;
-      }
+
       file_seek (file, file_ofs);
 
-      if (file_read (file, &phdr, sizeof phdr) != sizeof phdr) {
-        // printf ("load: fail   2\n");
+      if (file_read (file, &phdr, sizeof phdr) != sizeof phdr)
         goto done;
-      }
+      
       file_ofs += sizeof phdr;
       switch (phdr.p_type) 
         {
@@ -345,7 +344,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
         case PT_DYNAMIC:
         case PT_INTERP:
         case PT_SHLIB:
-          // printf ("load: fail   3\n");
           goto done;
         case PT_LOAD:
           if (validate_segment (&phdr, file)) 
@@ -371,33 +369,26 @@ load (const char *file_name, void (**eip) (void), void **esp)
                   zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
                 }
               if (!load_segment (file, file_page, (void *) mem_page,
-                                 read_bytes, zero_bytes, writable)) {
-                // printf ("load: fail   4\n");
+                                 read_bytes, zero_bytes, writable))
                 goto done;
-              }
             }
-          else {
-            // printf ("load: fail   5\n");
+          else
             goto done;
-          }
           break;
         }
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp, file_name)) {
-    // printf ("load: fail   6\n");
+  if (!setup_stack (esp, file_name))
     goto done;
-  }
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
   success = true;
 
- done:
+done:
   /* We arrive here whether the load is successful or not. */
-  // file_close (file);
   return success;
 }
 
@@ -483,17 +474,39 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   struct thread *t = thread_current ();
   list_push_back (&t->segments, &ps->elem);
 
-  return load_segment_page(ps, upage);
+  return true;
 }
 
 bool
-load_segment_page (struct program_segment *ps, void *upage_) {
-  ASSERT (pg_ofs (upage_) == 0); // upage_ should be page-aligned
-  
+load_new_segment_page (struct program_segment *ps, uint8_t *upage) {
+  ASSERT (pg_ofs (upage) == 0); // upage should be page-aligned
+  int segment_size = ps->read_bytes + ps->zero_bytes;
+  ASSERT (ps->upage <= fault_addr && fault_addr < ps->upage + segment_size) {
+
   /* Do calculate how to fill THIS page.
      We will read PAGE_READ_BYTES bytes from FILE
      and zero the final PAGE_ZERO_BYTES bytes. */
-  int page_read_bytes = (int)ps->upage + ps->read_bytes - (int)upage_;
+
+  /* Get a page of memory. */
+  struct spt_entry *spte = allocate_page (upage, ps->writable);
+  if (ps->writable) {
+    spte->type = NORMAL_PAGE;
+  }
+  else {
+    spte->type = SEGMENT_PAGE;
+    spte->ps = ps;
+  }
+
+  void *kpage = allocate_frame (spte);
+  if (kpage == NULL)
+    return false;
+
+  return load_segment_page(ps, spte, kpage);
+}
+
+bool
+load_segment_page (struct program_segment *ps, struct spt_entry *spte, void *kpage) {
+  int page_read_bytes = (int)ps->upage + (int)ps->read_bytes - (int)spte->upage;
   
   if (page_read_bytes < 0)
     page_read_bytes = 0;
@@ -502,13 +515,9 @@ load_segment_page (struct program_segment *ps, void *upage_) {
   
   int page_zero_bytes = PGSIZE - page_read_bytes;
 
-  /* Get a page of memory. */
-  void *kpage;
-  if ((kpage = allocate_frame (upage_, ps->writable)) == NULL)
-    return false;
-
   /* Load from disk */
-  file_seek (ps->file, ps->ofs + upage_ - ps->upage);
+  off_t ofs = (int)ps->ofs + (int)spte->upage - (int)ps->upage;
+  file_seek (ps->file, ofs);
   if (file_read (ps->file, kpage, page_read_bytes) != (int) page_read_bytes)
     return false;
   

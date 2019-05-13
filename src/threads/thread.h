@@ -1,10 +1,12 @@
 #ifndef THREADS_THREAD_H
 #define THREADS_THREAD_H
 
+#include "threads/synch.h"
+#include "vm/mmap.h"
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-#include "threads/synch.h"
+#include <hash.h>
 
 typedef int tid_t;
 
@@ -111,9 +113,14 @@ struct thread
 
     /* Fake PCB */
     struct file *process_file;
-    // vm
+    /* === Project 3: Virtual Memory === */
+    // program segments
     struct list segments;
-    struct hash sp_table; // supplemental page table
+    // supplemental page table
+    struct hash sp_table;
+    // memory mapped files
+    struct list file_mappings;
+    mapid_t next_mapid;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

@@ -618,11 +618,16 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->fd_list);
   t->next_fd = 2;
 
+  /* Project 3: Virtual Memory */
+
   /* For program segments */
   list_init (&t->segments);
 
   /* For supplemental page table */
   page_init ();
+
+  /* For memory mapped files */
+  mmap_init ();
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

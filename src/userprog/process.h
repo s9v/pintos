@@ -10,7 +10,7 @@
 struct program_segment {
 	struct file *file;
 	off_t ofs;
-	void *upage;
+	uint8_t *upage;
 	int read_bytes;
 	int zero_bytes;
 	bool writable;
