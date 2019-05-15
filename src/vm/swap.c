@@ -1,13 +1,11 @@
 #include "vm/swap.h"
 #include "devices/disk.h"
 #include "threads/synch.h"
+#include "threads/vaddr.h"
 #include <bitmap.h>
 #include <stdbool.h>
 
 #define SECTORS_PER_SLOT   (PGSIZE / DISK_SECTOR_SIZE)
-
-/* The swap device */
-static struct disk *swap_device;
 
 /* Tracks in-use and free swap slots */
 static struct lock swap_lock; // Protects swap_bitmap
@@ -20,6 +18,7 @@ int swap_nslots;
 void 
 swap_init (void)
 {
+	lock_init (&swap_lock);
 	swap_disk = disk_get (1, 1);
 	disk_sector_t nsectors = disk_size (swap_disk);
 	swap_nslots = nsectors * DISK_SECTOR_SIZE / PGSIZE;
@@ -42,7 +41,7 @@ bool
 swap_in (void *frame, int slot_idx)
 {
 	read_from_disk (frame, slot_idx);
-	bitmap_reset (swap_bitmap, slot_idx);
+	free_slot (slot_idx);
 	
 	return true;
 }
@@ -64,9 +63,11 @@ swap_in (void *frame, int slot_idx)
 int
 swap_out (void *frame)
 {
+	lock_acquire (&swap_lock);
 	int slot_idx = bitmap_scan_and_flip (swap_bitmap, 0, 1, false);
-	
-	if (slot_idx == BITMAP_ERROR)
+	lock_release (&swap_lock);
+
+	if (slot_idx == (int)BITMAP_ERROR)
 		return BITMAP_ERROR;
 
 	write_to_disk (frame, slot_idx);
@@ -98,3 +99,9 @@ void write_to_disk (uint8_t *frame, int slot_idx)
 	}
 }
 
+void
+free_slot (int slot_idx) {
+	lock_acquire (&swap_lock);
+	bitmap_reset (swap_bitmap, slot_idx);
+	lock_release (&swap_lock);
+}

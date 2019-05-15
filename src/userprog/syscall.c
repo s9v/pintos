@@ -1,7 +1,7 @@
 #include "userprog/syscall.h"
-#include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/process.h"
@@ -13,7 +13,7 @@
 #include "filesys/file.h"
 #include "filesys/inode.h"
 #include "devices/input.h"
-#include "string.h"
+#include "vm/mmap.h"
 
 // Global variables
 struct lock fd_lock;
@@ -42,15 +42,12 @@ void check_user_ptr (int *ptr, int offset);
 void check_valid_ptr (const void *ptr);
 
 void check_user_ptr (int *ptr, int offset) {
-  if (ptr <= (int *)0x08048000 || (int *)PHYS_BASE <= ptr + offset) {
+  if (ptr <= (int *)0x08048000 || !is_user_vaddr(ptr + offset))
     exit (-1);
-  }
 }
 
 void check_valid_ptr (const void *ptr) {
-  struct thread *cur = thread_current ();
-
-  if (ptr == NULL || !is_user_vaddr (ptr) || pagedir_get_page (cur->pagedir, ptr) == NULL)
+  if (ptr == NULL || !is_user_vaddr (ptr))
     exit (-1);
 }
 
@@ -67,6 +64,9 @@ syscall_handler (struct intr_frame *f)
 {
   check_user_ptr (f->esp, 0);
 
+  struct thread *t = thread_current ();
+  t->esp = f->esp;
+
   int syscall_no = *(int *) f->esp;
 
   switch (syscall_no) {
@@ -82,11 +82,13 @@ syscall_handler (struct intr_frame *f)
     case SYS_FILESIZE:
     case SYS_TELL:
     case SYS_CLOSE:
+    case SYS_MUNMAP:
       syscall_handler_arg1(syscall_no, f);
     break;
 
     case SYS_CREATE:
     case SYS_SEEK:
+    case SYS_MMAP:
       syscall_handler_arg2(syscall_no, f);
     break;
 
@@ -101,6 +103,7 @@ syscall_handler (struct intr_frame *f)
     break;
   }
   
+  t->esp = NULL;
 }
 
 void syscall_handler_arg0 (int syscall_no, struct intr_frame *f UNUSED) {
@@ -141,6 +144,9 @@ void syscall_handler_arg1 (int syscall_no, struct intr_frame *f) {
   } else if (syscall_no == SYS_CLOSE) {
     int fd = arg1;
     close (fd);
+  } else if (syscall_no == SYS_MUNMAP) {
+    mapid_t mapping = (mapid_t)arg1;
+    munmap (mapping);
   }
 }
 
@@ -162,6 +168,11 @@ void syscall_handler_arg2 (int syscall_no, struct intr_frame *f) {
     unsigned position = (unsigned) arg2;
 
     seek (fd, position);
+  } else if (syscall_no == SYS_MMAP) {
+    int fd = arg1;
+    void *addr = (void *) arg2;
+
+    f->eax = mmap (fd, addr);
   }
 }
 
@@ -369,4 +380,14 @@ void close (int fd) {
   file_close (fde->file);
   lock_release (&fs_lock);
   thread_del_fde (fde);
+}
+
+mapid_t
+mmap (int fd, void* addr) {
+  return mmap_mmap (fd, addr);
+}
+
+void
+munmap (mapid_t mapping) {
+
 }

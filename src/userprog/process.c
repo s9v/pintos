@@ -1,10 +1,10 @@
-#include "userprog/process.h"
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -22,6 +22,7 @@
 #include "vm/frame.h"
 #include "vm/page.h"
 #include "debug.h"
+#include "userprog/process.h"
 
 #define LOCK_WRAP(CODE)  lock_acquire (&fs_lock); (CODE); lock_release (&fs_lock);
 
@@ -142,8 +143,10 @@ void process_exit (void) {
   struct thread *curr = thread_current ();
 
   lock_acquire (&fs_lock);
-  file_allow_write (curr->process_file);
-  file_close (curr->process_file);
+  if (curr->process_file != NULL) {
+    file_allow_write (curr->process_file);
+    file_close (curr->process_file);
+  }
   free_files_from_fd_list(&curr->fd_list);
   lock_release (&fs_lock);
   // printf("process_exit-ing: %s\n", curr->name);
@@ -394,7 +397,7 @@ done:
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+//~ static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -463,6 +466,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
+  /* Postpone actual loading of segment pages for later */
   struct program_segment *ps = (struct program_segment *) malloc (sizeof (struct program_segment));
   ps->file = file;
   ps->ofs = ofs;
@@ -478,41 +482,15 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 }
 
 bool
-load_new_segment_page (struct program_segment *ps, uint8_t *upage) {
-  ASSERT (pg_ofs (upage) == 0); // upage should be page-aligned
-  int segment_size = ps->read_bytes + ps->zero_bytes;
-  ASSERT (ps->upage <= fault_addr && fault_addr < ps->upage + segment_size) {
+load_segment_page (struct spt_entry *spte) {
+  void *kpage = spte->fte->frame;
+  struct program_segment *ps = spte->ps;
 
-  /* Do calculate how to fill THIS page.
-     We will read PAGE_READ_BYTES bytes from FILE
-     and zero the final PAGE_ZERO_BYTES bytes. */
-
-  /* Get a page of memory. */
-  struct spt_entry *spte = allocate_page (upage, ps->writable);
-  if (ps->writable) {
-    spte->type = NORMAL_PAGE;
-  }
-  else {
-    spte->type = SEGMENT_PAGE;
-    spte->ps = ps;
-  }
-
-  void *kpage = allocate_frame (spte);
-  if (kpage == NULL)
-    return false;
-
-  return load_segment_page(ps, spte, kpage);
-}
-
-bool
-load_segment_page (struct program_segment *ps, struct spt_entry *spte, void *kpage) {
   int page_read_bytes = (int)ps->upage + (int)ps->read_bytes - (int)spte->upage;
-  
   if (page_read_bytes < 0)
     page_read_bytes = 0;
   else if (page_read_bytes > PGSIZE)
-    page_read_bytes = PGSIZE;
-  
+    page_read_bytes = PGSIZE;  
   int page_zero_bytes = PGSIZE - page_read_bytes;
 
   /* Load from disk */
@@ -527,66 +505,78 @@ load_segment_page (struct program_segment *ps, struct spt_entry *spte, void *kpa
   return true;
 }
 
+struct spt_entry *
+allocate_segment_page (void *upage, struct program_segment *ps) {
+  struct spt_entry *spte = allocate_page (upage, ps->writable);
+  spte->type = SEGMENT_PAGE;
+  spte->ps = ps;
+  
+  if (ps->writable) {
+    spte->type = NORMAL_PAGE;
+    spte->slot_idx = -1;
+  }
+
+  return spte;
+}
+
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
 setup_stack (void **esp, const char *file_name) 
 {
-  bool success = false;
-  void *addr = ((uint8_t *) PHYS_BASE) - PGSIZE;
-  success = allocate_frame (addr, true);
-
-  // printf("success : %d\n", success);
-
-  if (success) 
-  {
-    // copy to FILE_NAME2
-    int file_name_len = strlen(file_name);
-    char *file_name2 = malloc (file_name_len + 1);
-    strlcpy (file_name2, file_name, file_name_len+1);
-    // tokenize
-    char *token, *save_ptr;
-    int total_len = 0;
-    int argc = 0;
-    for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
-      int token_len = strlen(token);
-      total_len += token_len + 1;
-      argc++;
-    }
-
-    strlcpy (file_name2, file_name, file_name_len+1);
-
-    char *next_str_ptr = (char *)(PHYS_BASE) - total_len;
-    char **adr_arr_ptr = (char **)(next_str_ptr) - argc - 1;
-    char **argv = adr_arr_ptr;
-    for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
-      // printf ("setup_stack:args '%s'\n", token);
-      int token_len = strlen(token);
-      strlcpy (next_str_ptr, token, token_len + 1);
-      *adr_arr_ptr = next_str_ptr;
-      adr_arr_ptr++;
-      next_str_ptr += token_len + 1;
-    }
-
-    free (file_name2);
-
-    void **stack_ptr = (void *)argv;
-
-    // push argv
-    stack_ptr -= 1;
-    *stack_ptr = argv;
-
-    // push argc
-    stack_ptr -= 1;
-    *(int *)stack_ptr = argc;
-
-    // push return address
-    stack_ptr -= 1;
-    *stack_ptr = (void *)0;
-    *esp = stack_ptr;
+  /* Allocate first stack page */
+  void *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
+  //struct spt_entry *spte = 
+  allocate_normal_page (upage);
+  
+  /* Set up stack for main(argc, argv) */
+  
+  // copy to FILE_NAME2
+  int file_name_len = strlen(file_name);
+  char *file_name2 = malloc (file_name_len + 1);
+  strlcpy (file_name2, file_name, file_name_len+1);
+  // tokenize
+  char *token, *save_ptr;
+  int total_len = 0;
+  int argc = 0;
+  for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
+    int token_len = strlen(token);
+    total_len += token_len + 1;
+    argc++;
   }
 
-  return success;
+  strlcpy (file_name2, file_name, file_name_len+1);
+
+  char *next_str_ptr = (char *)(PHYS_BASE) - total_len;
+  char **adr_arr_ptr = (char **)(next_str_ptr) - argc - 1;
+  char **argv = adr_arr_ptr;
+  for (token = strtok_r (file_name2, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr)) {
+    // printf ("setup_stack:args '%s'\n", token);
+    int token_len = strlen(token);
+    strlcpy (next_str_ptr, token, token_len + 1);
+    *adr_arr_ptr = next_str_ptr;
+    adr_arr_ptr++;
+    next_str_ptr += token_len + 1;
+  }
+
+  free (file_name2);
+
+  void **stack_ptr = (void *)argv;
+
+  // push argv
+  stack_ptr -= 1;
+  *stack_ptr = argv;
+
+  // push argc
+  stack_ptr -= 1;
+  *(int *)stack_ptr = argc;
+
+  // push return address
+  stack_ptr -= 1;
+  *stack_ptr = (void *)0;
+  *esp = stack_ptr;
+
+  return true;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
@@ -598,26 +588,26 @@ setup_stack (void **esp, const char *file_name)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
-install_page (void *upage, void *kpage, bool writable)
-{
-  struct thread *t = thread_current ();
-
-  /* Verify that there's not already a page at that virtual
-     address, then map our page there. */
-  bool f1 = pagedir_get_page (t->pagedir, upage) == NULL;
-  // printf("install_page:  f1:%d\n", f1);
-  
-  bool f2 = false;
-  if (f1) {
-    f2 = pagedir_set_page (t->pagedir, upage, kpage, writable);
-    // printf("install_page:  f2:%d\n", f2);
-
-    // if (!f2) {
-    //   printf("dummy\n");
-    // }
-  }
-
-  // return (pagedir_get_page (t->pagedir, upage) == NULL && pagedir_set_page (t->pagedir, upage, kpage, writable));
-  return (f1 && f2);
-}
+// static bool
+// install_page (void *upage, void *kpage, bool writable)
+// {
+//   struct thread *t = thread_current ();
+//
+//   /* Verify that there's not already a page at that virtual
+//      address, then map our page there. */
+//   bool f1 = pagedir_get_page (t->pagedir, upage) == NULL;
+//   // printf("install_page:  f1:%d\n", f1);
+//
+//   bool f2 = false;
+//   if (f1) {
+//     f2 = pagedir_set_page (t->pagedir, upage, kpage, writable);
+//     // printf("install_page:  f2:%d\n", f2);
+//
+//     // if (!f2) {
+//     //   printf("dummy\n");
+//     // }
+//   }
+//
+//   // return (pagedir_get_page (t->pagedir, upage) == NULL && pagedir_set_page (t->pagedir, upage, kpage, writable));
+//   return (f1 && f2);
+// }

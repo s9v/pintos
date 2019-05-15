@@ -5,15 +5,16 @@
 
 struct ft_entry
 {
-	void* frame; // kpage
-	struct thread* owner;
-	struct spt_entry* spte;
-	// struct hash_elem elem_hash;
-	struct list_elem elem;
+	void *frame;
+	struct thread *owner;
+	struct spt_entry *spte;
+	
+  struct list_elem elem;
 };
 
 void frame_init (void);
-void *allocate_frame (void *addr, bool writable);
-
+struct ft_entry *allocate_frame (void);
+struct ft_entry *evict_frame (struct ft_entry *fte);
+// void free_frame (struct ft_entry *fte);
 
 #endif /* vm/frame.h */

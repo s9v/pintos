@@ -154,42 +154,89 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* Check if fault_addr is valid */
+  /* === Check if fault_addr is valid === */
+
+  if (fault_addr == NULL || fault_addr <= (void *)0x08048000 || !is_user_vaddr (fault_addr)) {
+    // printf ("bad bad faddr %p man --> kill\n", fault_addr);
+    // PANIC ("for backtrace!");
+    goto kill;
+  }
+
+  if (!not_present && write) {
+    // printf ("present && write --> kill\n");
+    goto kill;
+  }
+
   struct thread *t = thread_current ();
   void *faddr_page = pg_round_down (fault_addr);
+  struct list_elem *e;
+
+  void *esp;
+  if (user)
+    esp = f->esp;
+  else
+    esp = t->esp;
+
+  // printf ("faddr %p        esp %p        ", fault_addr, esp);
 
   /* Access to evicted page. Load it back from swap disk, mapped file, or program file. */
-  struct spt_entry *spte = hash_get_spte (faddr_page);
+  struct spt_entry *spte;
   
+  spte = hash_get_spte (faddr_page);
   if (spte != NULL) { // faddr_page is allocated, but evicted!
+    // printf ("hell yeah\n");
     load_page (spte);
     return;
   }
 
+  if (fault_addr == (void *)0xbffffe5c) {
+    ASSERT (fault_addr != (void *)0xbffffe5c);
+  }
+
   /* Access to a program segment never loaded before. Lazy load it. */
-  struct list_elem *e;
   for (e = list_begin(&t->segments); e != list_end (&t->segments); e = list_next (e)) {
     struct program_segment *ps = list_entry (e, struct program_segment, elem);
     int segment_size = ps->read_bytes + ps->zero_bytes;
 
     // Lazy-load pages of the segment
-    if (ps->upage <= fault_addr && fault_addr < ps->upage + segment_size) {
-      if (!load_new_segment_page (ps, faddr_page)) {
-        printf ("failed to load segment page\n");
-        exit (-1);
-      }
+    void *L = ps->upage;
+    void *R = ps->upage + segment_size;
+    if (L <= fault_addr && fault_addr < R) {
+      // printf("L %p <= ... < R %p\n", L, R);
+      spte = allocate_segment_page (faddr_page, ps);
+      load_segment_page (spte);
       return;
     }
   }
   
+  /* Access to mapped file page never loaded before. Lazy load it. */
+  for (e = list_begin (&t->file_mappings); e != list_end (&t->file_mappings);
+       e = list_next (e)) {
+    struct file_mapping *fmap = list_entry (e, struct file_mapping, elem);
+    void *L = fmap->upage;
+    void *R = fmap->upage + file_length (fmap->file);
+  
+    if (L <= fault_addr && fault_addr < R) {
+      spte = allocate_mmap_page (faddr_page, fmap);
+      load_mmap_page (spte);
+      return;
+    }
+  }
 
   /* Access to edge of stack never loaded before. Grow the stack. */
-  // ...
+  if (fault_addr >= (void *)((uint8_t *)esp - 32)) {
+    spte = allocate_normal_page (faddr_page);
+    load_normal_page (spte);
+    return;
+  }
 
-  /* Access to mapped file page never loaded before. Lazy load it. */
 
+kill:
+  // printf ("fs_lock holder: %p\n", fs_lock.holder);
+  // printf ("thread_current: %p\n", thread_current());
 
-  printf ("fault_addr is invalid\n");
+  if (lock_held_by_current_thread (&fs_lock))
+    lock_release (&fs_lock);
   exit (-1);
 
   // if (!allocate_frame(fault_addr))

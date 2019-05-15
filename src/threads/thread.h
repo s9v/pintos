@@ -121,6 +121,8 @@ struct thread
     // memory mapped files
     struct list file_mappings;
     mapid_t next_mapid;
+    // for page_fault in syscall
+    void *esp;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

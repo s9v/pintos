@@ -3,6 +3,7 @@
 
 #include "threads/thread.h"
 #include "filesys/file.h"
+#include "vm/page.h"
 #include <list.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -21,6 +22,7 @@ tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
-bool load_segment_page(struct program_segment *ps, void *upage_);
+bool load_segment_page (struct spt_entry *spte);
+struct spt_entry *allocate_segment_page (void *upage, struct program_segment *ps);
 
 #endif /* userprog/process.h */

@@ -195,6 +195,20 @@ thread_create (const char *name, int priority,
 
   /* Initialize thread. */
   init_thread (t, name, priority);
+
+  /* Project 3: Virtual Memory */
+
+  // For program segments
+  list_init (&t->segments);
+
+  // For supplemental page table
+  page_init (t);
+
+  // For memory mapped files
+  mmap_init (t);
+  
+  /* end of Project 3 */
+
   tid = t->tid = allocate_tid ();
 
   /* Stack frame for kernel_thread(). */
@@ -383,7 +397,7 @@ thread_current (void)
      of stack, so a few big automatic arrays or moderate
      recursion can cause stack overflow. */
   ASSERT (is_thread (t));
-  ASSERT (t->status == THREAD_RUNNING);
+  // ASSERT (t->status == THREAD_RUNNING); // TODO Can we even uncomment this???
 
   return t;
 }
@@ -617,17 +631,6 @@ init_thread (struct thread *t, const char *name, int priority)
   /* For file descriptors */
   list_init (&t->fd_list);
   t->next_fd = 2;
-
-  /* Project 3: Virtual Memory */
-
-  /* For program segments */
-  list_init (&t->segments);
-
-  /* For supplemental page table */
-  page_init ();
-
-  /* For memory mapped files */
-  mmap_init ();
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
