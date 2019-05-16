@@ -18,6 +18,7 @@ struct spt_entry
 	bool writable;
 	struct ft_entry *fte;
 	struct hash_elem elem_hash;
+	struct list_elem elem;
 	struct lock evict_lock;
 
 	/* Type specific attributes */
@@ -37,11 +38,11 @@ struct spt_entry *hash_get_spte (void *upage);
 
 void page_init (struct thread *t);
 void load_page (struct spt_entry *spte);
-// void free_page (struct spt_entry *spte);
+void free_page (struct spt_entry *spte);
 struct spt_entry *allocate_page (void *addr, bool writable);
 struct spt_entry *allocate_normal_page (void *upage);
 void load_normal_page (struct spt_entry *spte);
 void evict_normal_page (struct spt_entry *spte);
-// void free_normal_page (struct spt_entry *spte);
+void free_normal_page (struct spt_entry *spte);
 
 #endif /* vm/page.h */

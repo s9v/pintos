@@ -18,12 +18,12 @@ struct file_mapping {
 
 void mmap_init (struct thread *t);
 mapid_t mmap_mmap (int fd, void *addr);
-// void mmap_munmap (mapid_t mapid);
+void mmap_munmap (mapid_t mapid);
 void write_to_file (struct file *file, off_t offset, uint8_t *frame);
 void read_from_file (struct file *file, off_t offset, uint8_t *frame);
 struct spt_entry *allocate_mmap_page (uint8_t *upage, struct file_mapping *fmap);
 void load_mmap_page (struct spt_entry *spte);
-// void free_mmap_page (struct spt_entry *spte);
+void free_mmap_page (struct spt_entry *spte);
 void evict_mmap_page (struct spt_entry *spte);
 
 #endif

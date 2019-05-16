@@ -389,5 +389,5 @@ mmap (int fd, void* addr) {
 
 void
 munmap (mapid_t mapping) {
-
+  mmap_munmap (mapping);
 }

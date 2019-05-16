@@ -118,6 +118,7 @@ struct thread
     struct list segments;
     // supplemental page table
     struct hash sp_table;
+    struct list sp_list;
     // memory mapped files
     struct list file_mappings;
     mapid_t next_mapid;

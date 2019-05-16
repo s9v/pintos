@@ -37,27 +37,31 @@ frame_init (void)
  */
 struct list_elem *
 clock_find (void) {
-	// printf ("CLOCK_FIND size(frame_list) %d\n", list_size (&frame_list));
+	// printf ("clock_find START\n");
 
 	while (true) {
 		if (clock_elem == NULL || clock_elem == list_end (&frame_list)) // either cold start or wrapped around
 			clock_elem = list_begin (&frame_list);
-
+		
 		struct ft_entry *fte = list_entry (clock_elem, struct ft_entry, elem);
-		void *upage = fte->spte->upage;
-		uint32_t *pd = fte->owner->pagedir;
+		
+		if (fte->spte != NULL && lock_try_acquire (&fte->spte->evict_lock)/* && fte->owner->pagedir != NULL*/) {
+			void *upage = fte->spte->upage;
+			uint32_t *pd = fte->owner->pagedir;
 
-		if (pagedir_is_accessed (pd, upage)) // has second chance
-			pagedir_set_accessed (pd, upage, false); // use second chance
-		else {			
-			// Prevent access to frame by syscalls
-			// struct ft_entry *fte = list_entry (clock_elem, struct ft_entry, elem);
-			//~ if (lock_try_acquire (&fte->spte->evict_lock)) // TODO parallelism
-				break; // found frame to evict
+			if (pagedir_is_accessed (pd, upage)) { // Has second chance
+				pagedir_set_accessed (pd, upage, false);
+				lock_release (&fte->spte->evict_lock);
+			}
+			else {
+					break; // Found frame to evict!
+			}
 		}
-
+		
 		clock_elem = list_next (clock_elem);
 	}
+
+	// printf ("clock_find END\n");
 
 	struct list_elem *old_clock_elem = clock_elem;
 	clock_elem = list_next (clock_elem);
@@ -74,30 +78,31 @@ evict_frame (struct ft_entry *fte) {
 	ASSERT (fte->owner != NULL);
 	ASSERT (fte->spte != NULL);
 
+	struct spt_entry *spte = fte->spte;
+
 	/* Uninstall page */
 	uint32_t *pd = fte->owner->pagedir;
-	void *upage = fte->spte->upage;
+	void *upage = spte->upage;
 	pagedir_clear_page (pd, upage);
 
 	/* Evict by page type */
-	if (fte->spte->type == NORMAL_PAGE) {
-		evict_normal_page (fte->spte);
+	if (spte->type == NORMAL_PAGE) {
+		evict_normal_page (spte);
 	}
-	else if (fte->spte->type == MMAP_PAGE) {
-		evict_mmap_page (fte->spte);
+	else if (spte->type == MMAP_PAGE) {
+		evict_mmap_page (spte);
 	}
-	else if (fte->spte->type == SEGMENT_PAGE) {
+	else if (spte->type == SEGMENT_PAGE) {
 		// Do nothing
 		// evict_segment_page (fte->spte);
 	}
 
-	fte->spte->fte = NULL;
+	spte->fte = NULL;
 	fte->spte = NULL;
 	fte->owner = NULL;
-	lock_acquire (&frame_lock);
-	list_remove (&fte->elem);
-	lock_release (&frame_lock);
-	ASSERT (fte);
+
+	lock_release (&spte->evict_lock); // ======= allow loading of page
+
 	return fte;
 }
 
@@ -122,13 +127,15 @@ allocate_frame (void)
 	}
 	else {
 		/* Find a frame to evict */
+		lock_acquire (&frame_lock);
 		struct list_elem *clock_found_e = clock_find (); // NOTE: will acquire lock for spte
 		fte = list_entry (clock_found_e, struct ft_entry, elem); // TODO tell about how i forgot to remove `struct ft_entry *`
+		list_remove (&fte->elem);
+		lock_release (&frame_lock);
+
 		fte = evict_frame (fte);
-		// printf("fte that is not NULL %p\n", fte);
+
 		memset (fte->frame, 0, PGSIZE);
-		// printf("fte that is not NULL not MEMSETTED %p\n", fte);
-		//~ lock_release (&spte->evict_lock); // TODO parallelism
 	}
 
 	// printf("fte that is NULL %p\n", fte);
@@ -144,8 +151,14 @@ allocate_frame (void)
 	return fte;
 }
 
-/*void
+void
 free_frame (struct ft_entry *fte) {
+	ASSERT (fte != NULL);
+
+	lock_acquire (&frame_lock);
+	list_remove (&fte->elem);
+	lock_release (&frame_lock);
+
 	palloc_free_page (fte->frame);
-	//~ free (fte);
-}*/
+	free (fte);
+}

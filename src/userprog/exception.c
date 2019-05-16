@@ -157,13 +157,10 @@ page_fault (struct intr_frame *f)
   /* === Check if fault_addr is valid === */
 
   if (fault_addr == NULL || fault_addr <= (void *)0x08048000 || !is_user_vaddr (fault_addr)) {
-    // printf ("bad bad faddr %p man --> kill\n", fault_addr);
-    // PANIC ("for backtrace!");
     goto kill;
   }
 
   if (!not_present && write) {
-    // printf ("present && write --> kill\n");
     goto kill;
   }
 
@@ -184,7 +181,6 @@ page_fault (struct intr_frame *f)
   
   spte = hash_get_spte (faddr_page);
   if (spte != NULL) { // faddr_page is allocated, but evicted!
-    // printf ("hell yeah\n");
     load_page (spte);
     return;
   }
@@ -205,6 +201,7 @@ page_fault (struct intr_frame *f)
       // printf("L %p <= ... < R %p\n", L, R);
       spte = allocate_segment_page (faddr_page, ps);
       load_segment_page (spte);
+      lock_release (&spte->evict_lock);
       return;
     }
   }
@@ -219,14 +216,16 @@ page_fault (struct intr_frame *f)
     if (L <= fault_addr && fault_addr < R) {
       spte = allocate_mmap_page (faddr_page, fmap);
       load_mmap_page (spte);
+      lock_release (&spte->evict_lock);
       return;
     }
   }
 
   /* Access to edge of stack never loaded before. Grow the stack. */
-  if (fault_addr >= (void *)((uint8_t *)esp - 32)) {
+  if (fault_addr >= (void *)((uint8_t *)esp - 32) && fault_addr >= (void *)STACK_LIMIT) {
     spte = allocate_normal_page (faddr_page);
     load_normal_page (spte);
+    lock_release (&spte->evict_lock);
     return;
   }
 

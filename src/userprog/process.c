@@ -142,6 +142,21 @@ void free_files_from_fd_list(struct list *fd_list){
 void process_exit (void) {
   struct thread *curr = thread_current ();
 
+  // Free pages
+  struct list_elem *e, *next_e;
+  for (e = list_begin (&curr->sp_list); e != list_end (&curr->sp_list);
+        e = next_e) {
+    struct spt_entry *spte = list_entry (e, struct spt_entry, elem);
+    next_e = list_next (e);
+    list_remove (e);
+    free_page (spte);
+  }
+
+  // TODO free t->segments
+  // TODO free t->file_mappings
+
+
+  // Free process_file and fd's
   lock_acquire (&fs_lock);
   if (curr->process_file != NULL) {
     file_allow_write (curr->process_file);
@@ -149,6 +164,7 @@ void process_exit (void) {
   }
   free_files_from_fd_list(&curr->fd_list);
   lock_release (&fs_lock);
+
   // printf("process_exit-ing: %s\n", curr->name);
   uint32_t *pd;
 
@@ -526,8 +542,8 @@ setup_stack (void **esp, const char *file_name)
 {
   /* Allocate first stack page */
   void *upage = ((uint8_t *) PHYS_BASE) - PGSIZE;
-  //struct spt_entry *spte = 
-  allocate_normal_page (upage);
+  struct spt_entry *spte = allocate_normal_page (upage);
+  lock_release (&spte->evict_lock);
   
   /* Set up stack for main(argc, argv) */
   

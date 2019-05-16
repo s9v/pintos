@@ -55,6 +55,7 @@ void
 page_init (struct thread *t)
 {
   hash_init (&t->sp_table, hash_hash_spte, hash_less_spte, NULL);
+  list_init (&t->sp_list);
 }
 
 /*
@@ -63,6 +64,8 @@ page_init (struct thread *t)
 void
 load_page (struct spt_entry *spte)
 {
+  lock_acquire (&spte->evict_lock); // ======= prevent eviction of page
+
   struct thread *t = thread_current ();
   struct ft_entry *fte = allocate_frame ();
   fte->spte = spte;
@@ -83,16 +86,17 @@ load_page (struct spt_entry *spte)
     load_segment_page (spte);
   }
 
-
+  lock_release (&spte->evict_lock); // ======= allow eviction of page
 }
 
 /*
  * Free page, its corresponding frame and maybe the slot in swap disk.
  */
-/*void
+void
 free_page (struct spt_entry *spte) {
   struct thread *t = thread_current ();
-  
+  lock_acquire (&spte->evict_lock); // ======= prevent eviction of page
+
   if (spte->type == MMAP_PAGE) {
     free_mmap_page (spte);
   }
@@ -104,12 +108,18 @@ free_page (struct spt_entry *spte) {
     // free_segment_page (spte);
   }
 
-  if (spte->fte != NULL)
+  if (spte->fte != NULL) {
     free_frame (spte->fte);
+    spte->fte = NULL;
+    
+    ASSERT (pagedir_get_page (t->pagedir, spte->upage) != NULL);
+    pagedir_clear_page (t->pagedir, spte->upage);
+  }
 
   hash_delete (&t->sp_table, &spte->elem_hash);
+  lock_release (&spte->evict_lock); // ======= allow eviction of page
   free (spte);
-}*/
+}
 
 /*
  * Make new spt_entry for ADDR.
@@ -123,10 +133,13 @@ allocate_page (void *addr, bool writable)
   if (spte == NULL)
     PANIC ("malloc(spt_entry) failed");
 
+  lock_init (&spte->evict_lock);
+  lock_acquire (&spte->evict_lock);
+
   spte->upage = pg_round_down (addr);
   spte->writable = writable;
-  lock_init (&spte->evict_lock);
   hash_insert (&t->sp_table, &spte->elem_hash);
+  list_push_back (&t->sp_list, &spte->elem);
 
   /* Install page */
   struct ft_entry *fte = allocate_frame ();
@@ -172,12 +185,10 @@ evict_normal_page (struct spt_entry *spte) {
   spte->slot_idx = slot_idx;
 }
 
-/*void
+void
 free_normal_page (struct spt_entry *spte) {
   ASSERT (spte->type == NORMAL_PAGE);
   
-  if (spte->fte == NULL) {
-    int slot_idx = spte->slot_idx;
-    free_slot (slot_idx);
-  }
-}*/
+  if (spte->fte == NULL)
+    free_slot (spte->slot_idx);
+}
