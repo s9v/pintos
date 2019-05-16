@@ -4,6 +4,7 @@
 #include "vm/mmap.h"
 #include "vm/page.h"
 #include "userprog/syscall.h"
+#include "userprog/pagedir.h"
 #include <string.h>
 
 struct file_mapping *get_file_mapping (mapid_t mapid);
@@ -19,13 +20,13 @@ mmap_mmap (int fd, void *addr) {
 	if (fd == 0 || fd == 1) // Memory mapping fd's 0 and 1 is not allow
 		return -1;
 
-	if (pg_ofs (addr) != 0) // ADDR must be page-aligned
+	if (pg_ofs (addr) != 0 || addr == NULL) // ADDR must be page-aligned
 		return -1;
 
-	struct fd_elem *fde;
-	struct file *file;
+	struct fd_elem *fde = NULL;
+	struct file *file = NULL;
 	off_t file_len;
-	struct file_mapping *fmap;
+	struct file_mapping *fmap = NULL;
 	struct thread *t = thread_current ();
 
 	fde = thread_get_fde (fd);
@@ -223,8 +224,14 @@ evict_mmap_page (struct spt_entry *spte) {
 	ASSERT (spte->type == MMAP_PAGE);
 	ASSERT (spte->fte != NULL);
 
-	struct file *file = spte->fmap->file;
-	off_t offset = spte->offset;
-	void *frame = spte->fte->frame;
-	write_to_file (file, offset, frame);
+	uint32_t *pd = spte->fte->owner->pagedir;
+	void *upage = spte->upage;
+
+	if (pagedir_is_dirty (pd, upage)) {
+		struct file *file = spte->fmap->file;
+		off_t offset = spte->offset;
+		void *frame = spte->fte->frame;
+		write_to_file (file, offset, frame);
+		pagedir_set_dirty (pd, upage, false);
+	}
 }
