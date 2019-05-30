@@ -68,6 +68,12 @@ filesys_SRC += filesys/file.c		# Files.
 filesys_SRC += filesys/directory.c	# Directories.
 filesys_SRC += filesys/inode.c		# File headers.
 filesys_SRC += filesys/fsutil.c		# Utilities.
+# vm for filesys
+# filesys_SRC += vm/clock.c
+# filesys_SRC += vm/frame.c
+# filesys_SRC += vm/page.c
+# filesys_SRC += vm/swap.c
+# filesys_SRC += vm/mmap.c
 
 SOURCES = $(foreach dir,$(KERNEL_SUBDIRS),$($(dir)_SRC))
 OBJECTS = $(patsubst %.c,%.o,$(patsubst %.S,%.o,$(SOURCES)))
