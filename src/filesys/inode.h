@@ -8,7 +8,8 @@
 struct bitmap;
 
 void inode_init (void);
-bool inode_create (disk_sector_t, off_t);
+// bool inode_create (disk_sector_t, off_t);
+bool inode_create (disk_sector_t sector, off_t initial_size, bool is_dir);
 struct inode *inode_open (disk_sector_t);
 struct inode *inode_reopen (struct inode *);
 disk_sector_t inode_get_inumber (const struct inode *);

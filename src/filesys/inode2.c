@@ -1,18 +1,17 @@
-#include "devices/disk.h"
+#include "filesys/inode.h"
 #include <list.h>
 #include <debug.h>
 #include <round.h>
 #include <string.h>
-#include <stdbool.h>
 #include "filesys/cache.h"
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
-#include "filesys/inode.h"
 
 /* Identifies an inode. */
 #define INODE_MAGIC   0x494e4f44
 #define READDIR_MAX_LEN   14
+
 
 /* On-disk inode.
    Must be exactly DISK_SECTOR_SIZE bytes long. */
@@ -24,20 +23,22 @@
 //     uint32_t unused[125];               /* Not used. */
 //   };
 
-#define BLOCKS1_LEN   ((int) (400 / sizeof (disk_sector_t)))
-#define BLOCKS1_SIZE  ((int) (400))
-#define BLOCKS2_LEN   ((int) (DISK_SECTOR_SIZE / sizeof (disk_sector_t)))   // number of items
-#define BLOCKS2_SIZE  ((int) (DISK_SECTOR_SIZE))                            // total bytes
+#define BLOCKS1_LEN   (400 / sizeof disk_sector_t)
+#define BLOCKS1_SIZE  400
+#define BLOCKS2_LEN   (DISK_SECTOR_SIZE / sizeof disk_sector_t)   // number of items
+#define BLOCKS2_SIZE  DISK_SECTOR_SIZE                            // total bytes
 
-#define SIZEOF_INODE_DISK (sizeof(off_t) +                           \
-                           sizeof(bool) +                            \
-                           sizeof(char) * (READDIR_MAX_LEN + 1) +    \
-                           sizeof(disk_sector_t) * BLOCKS1_LEN +     \
-                           sizeof(disk_sector_t) +                   \
-                           sizeof(disk_sector_t) +                   \
+#define SIZEOF_INODE_DISK (sizeof(off_t) +                        // length
+                           sizeof(bool) +                         // is_dir
+                           sizeof(char) * (READDIR_MAX_LEN + 1) + // name
+                           sizeof(disk_sector_t) * BLOCKS1_LEN +  // blocks1
+
+                           sizeof(disk_sector_t) +                // self
+                           sizeof(disk_sector_t) +                // parent
+
                            sizeof(unsigned))
 
-struct inode_disk {
+union inode_disk {
   off_t length;                         /* File size in bytes. */
   bool is_dir;
   char name[READDIR_MAX_LEN + 1];
@@ -48,7 +49,7 @@ struct inode_disk {
 
   unsigned magic;                       /* Magic number. */
   uint8_t unused[DISK_SECTOR_SIZE - SIZEOF_INODE_DISK];
-};
+}
 
 struct blocks1 {
   disk_sector_t blocks2[BLOCKS2_LEN];
@@ -57,11 +58,11 @@ struct blocks1 {
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
-// static inline size_t
-// bytes_to_sectors (off_t size)
-// {
-//   return DIV_ROUND_UP (size, DISK_SECTOR_SIZE);
-// }
+static inline size_t
+bytes_to_sectors (off_t size)
+{
+  return DIV_ROUND_UP (size, DISK_SECTOR_SIZE);
+}
 
 /* In-memory inode. */
 struct inode 
@@ -71,28 +72,27 @@ struct inode
     int open_cnt;                       /* Number of openers. */
     bool removed;                       /* True if deleted, false otherwise. */
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
+    // struct inode_disk disk_inode;             /* Inode content. */
   };
 
 /* Returns the disk sector that contains byte offset POS within
    INODE.
    Returns -1 if INODE does not contain data for a byte at offset
    POS. */
-// static disk_sector_t
-// byte_to_sector (const struct inode *inode, off_t pos) 
-// {
-//   ASSERT (inode != NULL);
-//   if (pos < inode->data.length)
-//     return inode->data.start + pos / DISK_SECTOR_SIZE;
-//   else
-//     return -1;
-// }
+static disk_sector_t
+byte_to_sector (const struct inode *inode, off_t pos) 
+{
+  ASSERT (inode != NULL);
+  if (pos < inode->data.length)
+    return inode->data.start + pos / DISK_SECTOR_SIZE;
+  else
+    return -1;
+}
 
 
 /* HELPERS */
 
-
 void inode_release_blocks (struct inode *inode);
-
 
 /* List of open inodes, so that opening a single inode twice
    returns the same `struct inode'. */
@@ -114,9 +114,8 @@ inode_init (void)
    Returns true if successful.
    Returns false if memory or disk allocation fails. */
 bool
-inode_create (disk_sector_t sector, off_t initial_size, bool is_dir)
+inode_create (disk_sector_t sector, char *name_, bool is_dir)
 {
-  initial_size = 0;
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -127,23 +126,19 @@ inode_create (disk_sector_t sector, off_t initial_size, bool is_dir)
   disk_inode = calloc (1, sizeof *disk_inode);
   if (disk_inode != NULL) {
     /* Initialize disk_inode */
-    
-    // inode name
-    //~ size_t name_len = strlen (name_);
-    //~ ASSERT (name_len <= READDIR_MAX_LEN);
-    //~ memcpy (disk_inode->name, name_, name_len + 1);
-
+    size_t name_len = strlen (name_);
+    ASSERT (name_len <= READDIR_MAX_LEN);
     disk_inode->length = 0;
     disk_inode->is_dir = is_dir;
+    memcpy (disk_inode->name, name_, name_len + 1);
     memset (disk_inode->blocks1, -1, BLOCKS1_SIZE); // TODO: check this resets items to "invalid" (disk_sector_t) -1
     disk_inode->magic = INODE_MAGIC;
 
     /* Write to disk */
-    //~ disk_sector_t sector;
-    //~ success = free_map_allocate (1, &sector);
-    //~ if (success)
-    success = true;
-    cache_write (filesys_disk, sector, disk_inode);
+    disk_sector_t sector;
+    success = free_map_allocate (1, &sector);
+    if (success)
+      cache_write (filesys_disk, sector, disk_inode);
 
     free (disk_inode);
   }
@@ -228,18 +223,18 @@ inode_close (struct inode *inode)
 }
 
 /* Reads the on-disk inode and releases all data blocks */
-void
-inode_release_blocks (struct inode *inode) {
+void inode_release_blocks (struct inode *inode) {
   // Read on-disk inode
-  struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof (struct inode_disk));
+  struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof struct inode_disk);
   cache_read (filesys_disk, inode->sector, disk_inode);
   
   // Memory for level 2 blocks
-  struct blocks1 *blocks1 = (struct blocks1 *) malloc (sizeof (struct blocks1));
+  struct blocks1 *blocks1 = (struct blocks1 *) malloc (sizeof struct blocks1);
 
-  int i;
+  int i, j;
   off_t length;
-  for (i = 0, length = 0; length < disk_inode->length && i < BLOCKS1_LEN; i++) {
+  for (i = 0, length = 0; length < disk_inode->length; i++) {
+    ASSERT (i < BLOCKS1_LEN);
     disk_sector_t sector1 = disk_inode->blocks1[i];
 
     if (sector1 == (disk_sector_t) -1)
@@ -248,8 +243,8 @@ inode_release_blocks (struct inode *inode) {
     // Read level 2 blocks
     cache_read (filesys_disk, sector1, blocks1);
 
-    int j;
-    for (j = 0; length < disk_inode->length && j < BLOCKS2_LEN; j++) {
+    for (j = 0; length < disk_inode->length; j++) {
+      ASSERT (j < BLOCKS2_LEN);
       disk_sector_t sector2 = blocks1->blocks2[j];
       
       if (sector2 != (disk_sector_t) -1)
@@ -285,7 +280,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   off_t bytes_read = 0;
 
   // Read on-disk inode
-  struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof (struct inode_disk));
+  struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof struct inode_disk);
   cache_read (filesys_disk, inode->sector, disk_inode);
 
   if (offset >= disk_inode->length)
@@ -295,7 +290,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     size = disk_inode->length - offset;
   
   // Memory for level 2 blocks
-  struct blocks1 *blocks1 = (struct blocks1 *) malloc (sizeof (struct blocks1));
+  struct blocks1 *blocks1 = (struct blocks1 *) malloc (sizeof struct blocks1);
   uint8_t *data_block = (uint8_t *) malloc (DISK_SECTOR_SIZE);
 
  /* Start reading */
@@ -410,14 +405,14 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     return 0;
 
   // Read on-disk inode
-  struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof (struct inode_disk));
+  struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof struct inode_disk);
   cache_read (filesys_disk, inode->sector, disk_inode);
 
   if (disk_inode->length < offset + size)
     disk_inode->length = offset + size;
   
   // Memory for level 2 blocks
-  struct blocks1 *blocks1 = (struct blocks1 *) malloc (sizeof (struct blocks1));
+  struct blocks1 *blocks1 = (struct blocks1 *) malloc (sizeof struct blocks1);
   uint8_t *data_block = (uint8_t *) malloc (DISK_SECTOR_SIZE);
 
   /* Start writing */
@@ -440,7 +435,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       cache_read (filesys_disk, sector1, blocks1);
     }
 
-    int blocks1_ofs = offset % (BLOCKS2_LEN * DISK_SECTOR_SIZE);
+    int blocks1_ofs = offset % (BLOCKS2_LEN * DISK_SECTOR_SIZE)
     int j = blocks1_ofs / DISK_SECTOR_SIZE;
     for (; size > 0 && j < BLOCKS2_LEN; j++) {
       disk_sector_t sector2 = blocks1->blocks2[j];
@@ -480,7 +475,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   free (data_block);
 
   return bytes_written;
-}
+
   /* -------------- */
 
 //  uint8_t *bounce = NULL;
@@ -538,7 +533,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 //  free (bounce);
 //
 //  return bytes_written;
-
+}
 
 /* Disables writes to INODE.
    May be called at most once per inode opener. */
@@ -564,7 +559,5 @@ inode_allow_write (struct inode *inode)
 off_t
 inode_length (const struct inode *inode)
 {
-  struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof (struct inode_disk));
-  cache_read (filesys_disk, inode->sector, disk_inode);
-  return disk_inode->length;
+  return inode->data.length;
 }

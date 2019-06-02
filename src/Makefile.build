@@ -68,6 +68,8 @@ filesys_SRC += filesys/file.c		# Files.
 filesys_SRC += filesys/directory.c	# Directories.
 filesys_SRC += filesys/inode.c		# File headers.
 filesys_SRC += filesys/fsutil.c		# Utilities.
+filesys_SRC += filesys/cache.c		# In-memory cache for disk.
+
 # vm for filesys
 # filesys_SRC += vm/clock.c
 # filesys_SRC += vm/frame.c
