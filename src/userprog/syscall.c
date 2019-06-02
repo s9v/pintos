@@ -83,6 +83,11 @@ syscall_handler (struct intr_frame *f)
     case SYS_TELL:
     case SYS_CLOSE:
     case SYS_MUNMAP:
+    // filesys
+    case SYS_CHDIR:
+    case SYS_MKDIR:
+    case SYS_ISDIR:
+    case SYS_INUMBER:
       syscall_handler_arg1(syscall_no, f);
     break;
 
@@ -147,7 +152,14 @@ void syscall_handler_arg1 (int syscall_no, struct intr_frame *f) {
   } else if (syscall_no == SYS_MUNMAP) {
     mapid_t mapping = (mapid_t)arg1;
     munmap (mapping);
+  } else if (syscall_no == SYS_MKDIR) {
+    char *dir = (char *)arg1;
+    f->eax = filesys_mkdir (dir);
   }
+
+  // case SYS_CHDIR:
+  // case SYS_ISDIR:
+  // case SYS_INUMBER:
 }
 
 void syscall_handler_arg2 (int syscall_no, struct intr_frame *f) {

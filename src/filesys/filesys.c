@@ -110,3 +110,11 @@ do_format (void)
 
   formatting_filesys = false;
 }
+
+bool filesys_mkdir (const char *dir) {
+  // if (dir == NULL || strlen (dir) == 0) {
+  //   return false;
+  // }
+
+  return false;
+}
