@@ -566,5 +566,20 @@ inode_length (const struct inode *inode)
   struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof (struct inode_disk));
   cache_read (filesys_disk, inode->sector, disk_inode);
   ASSERT (disk_inode->magic == INODE_MAGIC);
-  return disk_inode->length;
+  off_t length = disk_inode->length;
+  free (disk_inode);
+  return length;
+}
+
+
+/* Checks if inode is file or directory */
+off_t
+inode_isdir (const struct inode *inode)
+{
+  struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof (struct inode_disk));
+  cache_read (filesys_disk, inode->sector, disk_inode);
+  ASSERT (disk_inode->magic == INODE_MAGIC);
+  bool is_dir = disk_inode->is_dir;
+  free (disk_inode);
+  return is_dir;
 }

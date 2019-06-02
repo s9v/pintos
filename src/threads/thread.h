@@ -124,6 +124,8 @@ struct thread
     mapid_t next_mapid;
     // for page_fault in syscall
     void *esp;
+    /* === Project 4: Filesystem === */
+    struct file *cwd; // current working directory
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */

@@ -42,13 +42,56 @@ filesys_done (void)
   free_map_close ();
   cache_flush ();
 }
-
+
+
+/* Find inode for given path  */
+
+bool
+filesys_lookup (const char *path_, struct inode **inode) {
+  ASSERT (path_ != NULL);
+
+  int path_len = strlen (path_);
+  char *path = malloc (path_len);
+  char *path_to_free = path;
+  memcpy (path, path_, path_len+1);
+
+  struct dir *dir;
+  if (path[0] == '/') {
+    dir = dir_open_root ();
+    path++;
+  }
+  else {
+    struct thread *t = thread_current ();
+    dir = dir_open(inode_reopen (t->cwd->inode));
+  }
+
+  char *token, *save_ptr;
+  for (token = strtok_r (path, "/", &save_ptr); token != NULL;
+       token = strtok_r (NULL, "/", &save_ptr)) {
+    if (!strcmp (token, ".")) {
+      // do nothing
+    }
+    else if (!strcmp (token, "..")) {
+      // parent
+      dir = 
+    }
+    else {
+      token
+    }
+  }
+
+  free (path_to_free);
+  *inode = ;
+
+  return true;
+}
+
 /* Creates a file named NAME with the given INITIAL_SIZE.
    Returns true if successful, false otherwise.
    Fails if a file named NAME already exists,
    or if internal memory allocation fails. */
 bool
-filesys_create (const char *name, off_t initial_size) 
+filesys_create (const char *path, off_t initial_size) 
 {
   disk_sector_t inode_sector = 0;
   struct dir *dir = dir_open_root ();

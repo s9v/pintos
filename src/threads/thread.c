@@ -16,6 +16,7 @@
 #include "userprog/process.h"
 #endif
 #include "vm/page.h"
+#include "filesys/file.h"
 
 
 /* Random value for struct thread's `magic' member.
@@ -622,6 +623,16 @@ init_thread (struct thread *t, const char *name, int priority)
   struct thread *rt = running_thread ();
   t->par_tid = (t != rt ?rt->tid :-1);
   t->waiting_parent = false;
+  /* === Project 4: Filesystem === */
+  // Copy parent's CWD
+  if (rt == initial_thread) { // parent is root thread
+    if (rt != t) { // ignore if self is root thread too, it doesn't need CWD
+      t->cwd = filesys_open ("/");
+    }
+  }
+  else {
+    t->cwd = file_reopen (rt->cwd);
+  }
 
   /* For thread_wait () */
   sema_init (&t->exit_sema1, 0);
