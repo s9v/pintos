@@ -45,7 +45,7 @@ mmap_mmap (int fd, void *addr) {
 	lock_release (&fs_lock);
 
 	if (file_len == 0)
-			goto fail;
+    goto fail;
 
 	// ==== Check for overlap ====
 

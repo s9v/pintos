@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include "cache.h"
 
@@ -33,6 +34,7 @@ void cache_init (void) {
 }
 
 void cache_read (struct disk *disk, disk_sector_t sector, void *buffer) {
+  // printf ("CACHE READ  <<<===   disk: %p   sector: %d\n", disk, sector);
   int idx = cache_lookup (disk, sector);
 
   if (idx == -1)
@@ -43,6 +45,7 @@ void cache_read (struct disk *disk, disk_sector_t sector, void *buffer) {
 }
 
 void cache_write (struct disk *disk, disk_sector_t sector, const void *buffer) {
+  // printf ("CACHE WRITE ===>>>   disk: %p   sector: %d\n", disk, sector);
   int idx = cache_lookup (disk, sector);
 
   if (idx == -1)

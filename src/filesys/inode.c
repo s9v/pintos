@@ -116,7 +116,6 @@ inode_init (void)
 bool
 inode_create (disk_sector_t sector, off_t initial_size, bool is_dir)
 {
-  initial_size = 0;
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -133,7 +132,7 @@ inode_create (disk_sector_t sector, off_t initial_size, bool is_dir)
     //~ ASSERT (name_len <= READDIR_MAX_LEN);
     //~ memcpy (disk_inode->name, name_, name_len + 1);
 
-    disk_inode->length = 0;
+    disk_inode->length = initial_size;
     disk_inode->is_dir = is_dir;
     memset (disk_inode->blocks1, -1, BLOCKS1_SIZE); // TODO: check this resets items to "invalid" (disk_sector_t) -1
     disk_inode->magic = INODE_MAGIC;
@@ -566,5 +565,6 @@ inode_length (const struct inode *inode)
 {
   struct inode_disk *disk_inode = (struct inode_disk *) malloc (sizeof (struct inode_disk));
   cache_read (filesys_disk, inode->sector, disk_inode);
+  ASSERT (disk_inode->magic == INODE_MAGIC);
   return disk_inode->length;
 }
